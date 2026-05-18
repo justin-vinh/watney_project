@@ -41,7 +41,7 @@ dependencies = [
 ]
 
 [project.scripts]
-watney = "watney.watney3:main"
+watney = "watney.main:main"
 
 [tool.flit.module]
 name = "watney"

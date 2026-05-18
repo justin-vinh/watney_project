@@ -1919,7 +1919,18 @@ with nav_bar:
 
 # render_patient is called by _finish_login after login completes
 
-ui.run(
-    title='LLM Oncology Reviewer',
-    reload=False
-)
+# ui.run(
+#     title='LLM Oncology Reviewer',
+#     reload=False
+# )
+
+
+
+def main():
+    ui.run(
+        title='WATNEY — LLM Oncology Reviewer',
+        reload=False,
+    )
+
+if __name__ == "__main__":
+    main()

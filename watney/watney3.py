@@ -14,7 +14,7 @@ from nicegui import ui
 # CONFIG
 # =============================================================================
 
-WATNEY_VERSION = 3
+WATNEY_VERSION = 1
 
 NOTES_COL = 'all_notes'
 GENERATION_COL = 'generation'
@@ -492,9 +492,10 @@ def build_notes_html(notes, highlighted_report=None, evidence_text=None):
 
 
 
-def main():
-    """Entry point for the WATNEY package. All ui.* calls must live here
-    so that NiceGUI's runpy-based reload doesn't double-register elements."""
+@ui.page('/')
+def build_page():
+    """Registered page — NiceGUI calls this for every browser visit.
+    Using @ui.page avoids the runpy/sys.argv[0] re-execution entirely."""
     global current_patient_index, agent_output, event_agent_map, NOTE_FONT_SIZE
     global CURRENT_USER, UI_LOCKED, user_label, nav_bar, df
     global EXTRACTION_CSV_PATH, SQLITE_PATH, ANNOTATION_OUTPUT_DIR, CONFIG_PATH
@@ -1637,13 +1638,14 @@ def main():
         None
     ))
 
-    # =============================================================================
-    # START
-    # =============================================================================
 
-    # Restore persisted font size
+
+def main():
+    """Entry point — registers the page and starts the server."""
+    # Restore persisted font size before server starts
     _saved_font = load_config().get('note_font_size')
     if _saved_font:
+        global NOTE_FONT_SIZE
         NOTE_FONT_SIZE = int(_saved_font)
 
     try:

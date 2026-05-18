@@ -764,7 +764,7 @@ lock_overlay = ui.column().classes(
 
 with lock_overlay:
 
-    ui.label(f'WATNEY v{WATNEY_VERSION}').classes('text-4xl font-bold')
+    ui.label(f'WATNEY {WATNEY_VERSION}').classes('text-4xl font-bold')
     ui.separator().classes('mb-4')
 
     # -- Step 1: username --
@@ -1397,7 +1397,7 @@ def render_patient(index):
     with (left_panel):
 
         with ui.column().classes('gap-0'):
-            ui.label(f'WATNEY v{WATNEY_VERSION}').classes('text-2xl font-bold')
+            ui.label(f'WATNEY {WATNEY_VERSION}').classes('text-2xl font-bold')
 
             ui.label(
                 'Developed by Justin Vinh @ DFCI'

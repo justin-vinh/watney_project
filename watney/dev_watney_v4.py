@@ -1273,8 +1273,7 @@ def show_settings() -> None:
 
         # ── Resources / GitHub ────────────────────────────────────────────────
         ui.label('Resources').classes('text-sm font-semibold')
-        # TODO: set your repository URL here once the repo is public
-        GITHUB_URL = ''
+        GITHUB_URL = 'https://github.com/justin-vinh/watney_project'
         if GITHUB_URL:
             ui.link('WATNEY on GitHub', GITHUB_URL, new_tab=True).classes('text-xs text-blue-600')
         else:

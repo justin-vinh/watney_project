@@ -20,7 +20,7 @@ NOTES_COL = 'all_notes'
 GENERATION_COL = 'generation'
 PATIENT_ID_COL = 'DFCI_MRN'
 
-ANNOTATION_OUTPUT_DIR = Path('./watney_annotations')
+ANNOTATION_OUTPUT_DIR = Path('watney_annotations')
 ANNOTATION_OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
 SQLITE_PATH = (

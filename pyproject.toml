@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "watney"
-version = "3.0.1"
+version = "3.0.2"
 
 description = "Interactive NiceGUI oncology annotation platform for reviewing LLM-extracted progression events and systemic therapy timelines."
 

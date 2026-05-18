@@ -14,13 +14,13 @@ from nicegui import ui
 # CONFIG
 # =============================================================================
 
-WATNEY_VERSION = 1
+WATNEY_VERSION = 3
 
 NOTES_COL = 'all_notes'
 GENERATION_COL = 'generation'
 PATIENT_ID_COL = 'DFCI_MRN'
 
-ANNOTATION_OUTPUT_DIR = Path('./watney_annotations')
+ANNOTATION_OUTPUT_DIR = Path('../watney_annotations')
 ANNOTATION_OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
 SQLITE_PATH = (
@@ -608,7 +608,7 @@ def build_page():
 
     with lock_overlay:
 
-        ui.label(f'WATNEY v{WATNEY_VERSION}').classes('text-4xl font-bold')
+        ui.label(f'WATNEY {WATNEY_VERSION}').classes('text-4xl font-bold')
         ui.separator().classes('mb-4')
 
         step1 = ui.column().classes('items-center gap-2')
@@ -1285,7 +1285,7 @@ def build_page():
         with left_panel:
 
             with ui.column().classes('gap-0'):
-                ui.label(f'WATNEY v{WATNEY_VERSION}').classes('text-2xl font-bold')
+                ui.label(f'WATNEY {WATNEY_VERSION}').classes('text-2xl font-bold')
                 ui.label('Developed by Justin Vinh @ DFCI').classes('text-[11px] text-gray-500 leading-tight')
                 user_label = ui.label(f'User: {CURRENT_USER or "not set"}').classes('text-xs text-gray-600')
 

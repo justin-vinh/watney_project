@@ -14,7 +14,18 @@ from nicegui import ui
 # CONFIG
 # =============================================================================
 
-WATNEY_VERSION = 4
+try:
+    from importlib.metadata import version as _pkg_version
+    WATNEY_VERSION = _pkg_version('watney')
+except Exception:
+    WATNEY_VERSION = '4'  # fallback for dev / non-package runs
+
+def _major_version(v):
+    """Return only the major version number, e.g. '3.0.1' -> '3'."""
+    try:
+        return str(v).split('.')[0]
+    except Exception:
+        return str(v)
 
 NOTES_COL = 'all_notes'
 GENERATION_COL = 'generation'
@@ -417,6 +428,7 @@ def build_page():
     current_patient_index  = 0
     agent_output           = None
     progression_sort_order = 'Ascending'
+    _refresh_summary_holder = [None]  # mutable ref so progression_card can always call current version
 
     # ── CSS ───────────────────────────────────────────────────────────────────
     ui.add_head_html(f"""<style>
@@ -445,7 +457,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
     ).style('background-color:white;pointer-events:all;')
 
     with lock_overlay:
-        ui.label(f'WATNEY {WATNEY_VERSION}').classes('text-4xl font-bold')
+        ui.label(f'WATNEY {_major_version(WATNEY_VERSION)}').classes('text-4xl font-bold')
         ui.separator().classes('mb-4')
         step1 = ui.column().classes('items-center gap-2')
         step2 = ui.column().classes('items-center gap-2')
@@ -626,7 +638,8 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 save_agent_assignment(rid, av, pid, progression_date=prog_dt, evidence=ev,
                                       agent_start=a_start, agent_start_source=a_start_src,
                                       agent_end=a_end, agent_end_source=a_end_src)
-                refresh_summary()
+                if _refresh_summary_holder[0]:
+                    _refresh_summary_holder[0]()
 
             ui.button('Save Agent Assignment',
                 on_click=lambda rid=report_id, sa=selected_agent, pid=patient_id,
@@ -668,75 +681,6 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                         global current_patient_index
                         current_patient_index = idx; d.close(); render_patient(idx)
                     ui.button('Go', on_click=go).props('dense flat size=xs')
-            ui.separator().classes('my-2')
-
-            # ── Version / Update ─────────────────────────────────────────────
-            ui.label('Updates').classes('text-sm font-semibold mt-1')
-            ui.label(f'Installed version: {WATNEY_VERSION}').classes('text-xs text-gray-600')
-            version_status = ui.label('').classes('text-xs text-gray-500 mt-1')
-            update_btn = ui.button('Update WATNEY').props('dense outline').classes('mt-1')
-            update_btn.set_visibility(False)
-
-            async def check_version():
-                import asyncio
-                version_status.set_text('Checking PyPI…')
-                try:
-                    proc = await asyncio.create_subprocess_exec(
-                        'pip', 'index', 'versions', 'watney',
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
-                    )
-                    stdout, _ = await proc.communicate()
-                    text = stdout.decode()
-                    # pip index versions output: "watney (X.Y.Z)"
-                    import re as _re
-                    m = _re.search(r'Available versions:\s*([\d.]+)', text)
-                    if not m:
-                        # fallback: parse first version from list
-                        m = _re.search(r'\(([\d.]+)\)', text)
-                    if m:
-                        latest = m.group(1).strip()
-                        installed = str(WATNEY_VERSION)
-                        if latest != installed:
-                            version_status.set_text(f'Latest: {latest} — update available!')
-                            version_status.classes('text-orange-600', remove='text-gray-500 text-green-600')
-                            update_btn.set_visibility(True)
-                            update_btn._props['label'] = f'Update to {latest}'
-                            update_btn.update()
-                        else:
-                            version_status.set_text(f'Up to date (v{latest})')
-                            version_status.classes('text-green-600', remove='text-gray-500 text-orange-600')
-                            update_btn.set_visibility(False)
-                    else:
-                        version_status.set_text('Could not parse version info.')
-                except Exception as ex:
-                    version_status.set_text(f'Check failed: {ex}')
-
-            async def do_update():
-                import asyncio
-                update_btn.set_visibility(False)
-                version_status.set_text('Uninstalling current version…')
-                proc1 = await asyncio.create_subprocess_exec(
-                    'pip', 'uninstall', 'watney', '-y',
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-                )
-                await proc1.communicate()
-                version_status.set_text('Installing latest version…')
-                proc2 = await asyncio.create_subprocess_exec(
-                    'pip', 'install', 'watney',
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-                )
-                stdout, stderr = await proc2.communicate()
-                if proc2.returncode == 0:
-                    version_status.set_text('Update complete — please restart WATNEY.')
-                    version_status.classes('text-green-600', remove='text-orange-600 text-gray-500')
-                else:
-                    version_status.set_text(f'Update failed: {stderr.decode()[:200]}')
-                    version_status.classes('text-red-600', remove='text-green-600 text-orange-600')
-
-            update_btn.on('click', do_update)
-            ui.button('Check for updates', on_click=check_version).props('dense outline').classes('mt-1')
-
             ui.separator().classes('my-2')
             ui.button('Close', on_click=dlg.close).props('dense')
         dlg.open()
@@ -924,6 +868,65 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.label(f'LLM-sourced: {len(stats_df[stats_df["progression_source"]=="LLM"]) if not stats_df.empty else 0}').classes('text-xs text-gray-600')
             ui.label(f'Clinician-sourced: {len(stats_df[stats_df["progression_source"]=="manual"]) if not stats_df.empty else 0}').classes('text-xs text-gray-600')
             ui.separator().classes('my-2')
+
+            # ── Updates ──────────────────────────────────────────────────────
+            ui.label('Updates').classes('text-sm font-semibold mt-1')
+            ui.label(f'Installed version: {WATNEY_VERSION}').classes('text-xs text-gray-600')
+            version_status = ui.label('').classes('text-xs text-gray-500 mt-1')
+            update_btn = ui.button('Update WATNEY').props('dense outline').classes('mt-1')
+            update_btn.set_visibility(False)
+
+            async def check_version():
+                import asyncio, re as _re
+                version_status.set_text('Checking PyPI…')
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        'pip', 'index', 'versions', 'watney',
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                    stdout, _ = await proc.communicate()
+                    text = stdout.decode()
+                    m = (_re.search(r'Available versions:\s*([\d.]+)', text)
+                         or _re.search(r'\(([\d.]+)\)', text))
+                    if m:
+                        latest = m.group(1).strip()
+                        if latest != str(WATNEY_VERSION):
+                            version_status.set_text(f'Latest: {latest} — update available!')
+                            version_status.classes('text-orange-600', remove='text-gray-500 text-green-600')
+                            update_btn.set_visibility(True)
+                            update_btn._props['label'] = f'Update to {latest}'
+                            update_btn.update()
+                        else:
+                            version_status.set_text(f'Up to date (v{latest})')
+                            version_status.classes('text-green-600', remove='text-gray-500 text-orange-600')
+                            update_btn.set_visibility(False)
+                    else:
+                        version_status.set_text('Could not parse version info.')
+                except Exception as ex:
+                    version_status.set_text(f'Check failed: {ex}')
+
+            async def do_update():
+                import asyncio
+                update_btn.set_visibility(False)
+                version_status.set_text('Updating…')
+                proc1 = await asyncio.create_subprocess_exec(
+                    'pip', 'uninstall', 'watney', '-y',
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                await proc1.communicate()
+                proc2 = await asyncio.create_subprocess_exec(
+                    'pip', 'install', 'watney',
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                _, stderr = await proc2.communicate()
+                if proc2.returncode == 0:
+                    version_status.set_text('Update complete — please restart WATNEY.')
+                    version_status.classes('text-green-600', remove='text-orange-600 text-gray-500')
+                else:
+                    version_status.set_text(f'Update failed: {stderr.decode()[:200]}')
+                    version_status.classes('text-red-600', remove='text-green-600 text-orange-600')
+
+            update_btn.on('click', do_update)
+            ui.button('Check for updates', on_click=check_version).props('dense outline').classes('mt-1')
+
+            ui.separator().classes('my-2')
             ui.button('Close', on_click=dlg.close).props('dense')
         dlg.open()
 
@@ -950,7 +953,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
         with left_panel:
             with ui.column().classes('gap-0'):
-                ui.label(f'WATNEY {WATNEY_VERSION}').classes('text-2xl font-bold')
+                ui.label(f'WATNEY {_major_version(WATNEY_VERSION)}').classes('text-2xl font-bold')
                 ui.label('Developed by Justin Vinh @ DFCI').classes('text-[11px] text-gray-500 leading-tight')
                 user_label = ui.label(f'User: {CURRENT_USER or "not set"}').classes('text-xs text-gray-600')
             ui.separator().classes('mb-4')
@@ -1001,6 +1004,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                                     ui.label(rd['source']).style('width:60px')
                                     ui.label(rd['user']).style('width:70px')
 
+            _refresh_summary_holder[0] = refresh_summary
             refresh_summary()
 
             with ui.column().classes('agent-box w-full'):
@@ -1113,6 +1117,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
             clinician_evidence = ui.textarea(label='Evidence (optional)').classes('w-full')
             clinician_evidence.props('dense outlined')
+            clinician_evidence.style('font-family: Arial, sans-serif; font-size: 14px;')
 
             clinician_report_id     = ui.input(label='Report ID of Evidence (optional)').classes('w-full')
             clinician_determined_by = ui.input(label='Determined by', placeholder='e.g., Dr. X, tumor board').classes('w-full')
@@ -1120,7 +1125,18 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             def save_clinician_event():
                 row_d = df.iloc[current_patient_index]
                 pid   = normalize_patient_id(row_d[PATIENT_ID_COL])
-                d     = re.sub(r'\D', '', clinician_date.value or '')
+
+                # Mandatory: agent
+                if not clinician_agent.value:
+                    ui.notify('Agent is required', color='red')
+                    return
+
+                # Mandatory: progression date
+                if not clinician_date.value or not clinician_date.value.strip():
+                    ui.notify('Progression date is required', color='red')
+                    return
+
+                d = re.sub(r'\D', '', clinician_date.value or '')
                 if d and len(d) != 8: ui.notify('Date must be YYYYMMDD', color='red'); return
                 cleaned_date = f"{d[:4]}-{d[4:6]}-{d[6:8]}" if d else None
                 if clinician_date.value and not cleaned_date: ui.notify('Invalid date.', color='red'); return

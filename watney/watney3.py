@@ -1646,7 +1646,10 @@ def main():
     if _saved_font:
         NOTE_FONT_SIZE = int(_saved_font)
 
-    ui.run(title='LLM Oncology Reviewer', reload=False)
+    try:
+        ui.run(title='LLM Oncology Reviewer', reload=False)
+    except KeyboardInterrupt:
+        pass
 
-if __name__ == '__main__':
+if __name__ in {'__main__', '__mp_main__', '<run_path>'}:
     main()

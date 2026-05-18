@@ -38,16 +38,20 @@ dependencies = [
     "requests>=2.31",
 ]
 
-[project.scripts]
-watney = "watney.main:main"
-
 [tool.ruff]
 line-length = 99
 src = ["src"]
+include = ["pyproject.toml", "src/**/*.py"]
 
 [tool.ruff.lint]
-extend-select = ["I"]
+extend-select = ["I"]  # Add import sorting
 
 [tool.ruff.lint.isort]
-known-first-party = ["watney"]
+known-first-party = ["watney_project"]
 force-sort-within-sections = true
+
+[tool.setuptools.packages.find]
+where = ["watney_project"]
+
+[tool.setuptools.package-data]
+"watney_project.templates" = ["**/*"]

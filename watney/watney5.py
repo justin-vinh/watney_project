@@ -418,6 +418,10 @@ def build_notes_html(notes, highlighted_report=None, evidence_text=None):
 # PAGE
 # =============================================================================
 
+# Track active browser connections to warn about multiple instances
+_active_clients = {'count': 0}
+
+
 @ui.page('/')
 def build_page():
     global current_patient_index, agent_output, NOTE_FONT_SIZE
@@ -429,6 +433,13 @@ def build_page():
     agent_output           = None
     progression_sort_order = 'Ascending'
     _refresh_summary_holder = [None]  # mutable ref so progression_card can always call current version
+
+    # Track this client connection
+    _active_clients['count'] += 1
+    from nicegui import app as _ngapp
+    @_ngapp.on_disconnect
+    def _on_disconnect():
+        _active_clients['count'] = max(0, _active_clients['count'] - 1)
 
     # ── CSS ───────────────────────────────────────────────────────────────────
     ui.add_head_html(f"""<style>
@@ -459,21 +470,33 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
     with lock_overlay:
         ui.label(f'WATNEY {_major_version(WATNEY_VERSION)}').classes('text-4xl font-bold')
         ui.separator().classes('mb-4')
+        if _active_clients['count'] > 1:
+            ui.label(
+                f'⚠ {_active_clients["count"]} browser tabs are open. '
+                'Multiple instances can cause unexpected behaviour — '
+                'please close the other tabs before continuing.'
+            ).classes('text-xs text-red-600 font-semibold text-center w-80 mb-2')
         step1 = ui.column().classes('items-center gap-2')
         step2 = ui.column().classes('items-center gap-2')
         step2.set_visibility(False)
 
         with step1:
-            ui.label('Enter Name to Begin').classes('text-xl font-bold')
-            user_select = ui.input(label='Username', placeholder='e.g. John Doe').classes('w-64')
-            csv_note = ui.label('').classes('text-xs text-gray-500')
+            ui.label('Enter Name to Begin').classes('text-xl font-bold text-center')
+            name_error = ui.label('').classes('text-xs text-red-500 text-center')
+            user_select = ui.input(
+                placeholder='Your name'
+            ).classes('w-64 text-center').props('outlined dense')
+            csv_note = ui.label('').classes('text-xs text-gray-500 text-center')
             if EXTRACTION_CSV_PATH and Path(EXTRACTION_CSV_PATH).exists():
                 csv_note.set_text(f'CSV: {Path(EXTRACTION_CSV_PATH).name}')
 
             def after_username():
                 global CURRENT_USER
                 if not user_select.value.strip():
-                    ui.notify('Username required', color='red'); return
+                    name_error.set_text('Please enter your name to continue.')
+                    user_select.run_method('focus')
+                    return
+                name_error.set_text('')
                 CURRENT_USER = user_select.value.strip()
                 if EXTRACTION_CSV_PATH and Path(EXTRACTION_CSV_PATH).exists():
                     _finish_login()
@@ -504,18 +527,183 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
             ui.button('Load & Enter', on_click=set_csv_and_login).classes('w-96')
 
-        def _finish_login():
+        def _finish_login(demo=False):
             global UI_LOCKED
             UI_LOCKED = False
             lock_overlay.set_visibility(False)
+            _hide_login_bottom()
             if user_label is not None: user_label.set_text(f'User: {CURRENT_USER}')
             if nav_bar is not None: nav_bar.style('display:flex')
-            render_patient(current_patient_index)
-            ui.notify(f'Welcome {CURRENT_USER}', color='green')
+            render_patient(current_patient_index, demo=demo)
+            msg = 'Demo mode active — synthetic data only' if demo else f'Welcome {CURRENT_USER}'
+            color = 'orange' if demo else 'green'
+            ui.notify(msg, color=color)
 
     def require_user():
         if not CURRENT_USER: ui.notify('Set username first', color='red'); return False
         return True
+
+    # ── Tutorial function (accessible from anywhere in build_page scope) ────────
+    _tut_fn_holder = [None]
+
+    def _do_launch_tutorial():
+        steps =         steps = [
+            ('Log In',
+             'Enter your name and the path to your extraction CSV. WATNEY remembers your CSV path between sessions.',
+             '👤'),
+            ('Navigate Patients',
+             'Use Prev / Next buttons or the ← → arrow keys to move between patients. Click "Patient List" to jump to any patient directly.',
+             '⟵⟶'),
+            ('Agent Intervals',
+             'Select an agent from the dropdown to see its treatment intervals. Click "Start source" or "End source" to jump to the supporting note in the right panel.',
+             '📅'),
+            ('Progression Cards',
+             'Each amber-highlighted card is the likely progression event for the selected agent — its treatment plan at the time matches the agent name.',
+             '🟡'),
+            ('Save an Assignment',
+             'In a progression card, pick the agent, review the auto-filled start/end dates, and click "Save Agent Assignment". The Progression Summary updates immediately.',
+             '💾'),
+            ('Edit Dates',
+             'Start and End date fields auto-fill from the LLM. You can edit them freely — blur the field to auto-format to YYYY-MM-DD.',
+             '✏️'),
+            ('Clinician Events',
+             'Manually add a progression event at the bottom of the left panel. Agent and Progression Date are required.',
+             '🩺'),
+            ('Undo',
+             'Remove Agent clears a specific card assignment in place. The Undo button on the nav bar deletes the most recent annotation for the current patient.',
+             '↩'),
+            ('Export',
+             'Click Export to download all annotations as a CSV. In demo mode, only demo data is exported — your real database is never affected.',
+             '📥'),
+            ('Settings',
+             'Adjust font size, change file paths, relocate the annotations folder, and check for WATNEY updates — all from the Settings dialog.',
+             '⚙️'),
+        ]
+
+        step_idx = [0]  # mutable to update from closures
+
+        with ui.dialog() as tut_dlg, ui.card().classes('w-[540px]'):
+            # Header
+            with ui.row().classes('w-full items-center justify-between mb-2'):
+                ui.label('WATNEY Tutorial').classes('text-lg font-bold')
+                progress_label = ui.label('').classes('text-xs text-gray-400')
+
+            ui.separator()
+
+            # Step content area — single step at a time
+            icon_label  = ui.label('').classes('text-4xl text-center w-full mt-4')
+            title_label = ui.label('').classes('text-base font-bold text-blue-700 text-center w-full mt-2')
+            body_label  = ui.label('').classes('text-sm text-gray-700 text-center w-full mt-2 leading-relaxed px-4')
+
+            ui.element('div').style('height:24px;')  # spacer
+
+            # Navigation row
+            with ui.row().classes('w-full justify-between items-center mt-4'):
+                prev_btn = ui.button('← Back').props('flat dense')
+                dot_row  = ui.row().classes('gap-1 items-center')
+                next_btn = ui.button('Next →').props('dense')
+
+            # Build dots
+            dots = []
+            with dot_row:
+                for i in range(len(steps)):
+                    d = ui.element('div').style(
+                'width:8px;height:8px;border-radius:50%;'
+                'background:#cbd5e1;cursor:pointer;'
+                    )
+                    dots.append(d)
+
+            def render_step(i):
+                icon, title, body = steps[i][2], steps[i][0], steps[i][1]
+                icon_label.set_text(icon)
+                title_label.set_text(title)
+                body_label.set_text(body)
+                progress_label.set_text(f'{i+1} / {len(steps)}')
+                prev_btn.set_visibility(i > 0)
+                next_btn.set_text('Finish' if i == len(steps)-1 else 'Next →')
+                for j, d in enumerate(dots):
+                    d.style(
+                'width:8px;height:8px;border-radius:50%;cursor:pointer;'
+                + ('background:#3b82f6;' if j == i else 'background:#cbd5e1;')
+                    )
+
+            def go_prev():
+                step_idx[0] = max(0, step_idx[0] - 1)
+                render_step(step_idx[0])
+
+            def go_next():
+                if step_idx[0] == len(steps) - 1:
+                    tut_dlg.close()
+                else:
+                    step_idx[0] = min(len(steps)-1, step_idx[0] + 1)
+                    render_step(step_idx[0])
+
+            prev_btn.on('click', go_prev)
+            next_btn.on('click', go_next)
+
+            for i, d in enumerate(dots):
+                def jump(_, idx=i):
+                    step_idx[0] = idx
+                    render_step(idx)
+                d.on('click', jump)
+
+            render_step(0)
+
+        tut_dlg.open()
+
+    _tut_fn_holder[0] = _do_launch_tutorial
+
+    # ── Demo + Tutorial — fixed bottom bar (outside login overlay) ────────────
+    _login_bottom = ui.element('div').style(
+        'position:fixed;bottom:20px;left:0;right:0;'
+        'display:flex;flex-direction:column;align-items:center;gap:6px;z-index:10000;'
+    )
+    with _login_bottom:
+        with ui.row().classes('items-center gap-3'):
+
+            def launch_demo():
+                global CURRENT_USER, df, EXTRACTION_CSV_PATH
+                demo_path = Path(__file__).parent / 'watney_demo_data.csv'
+                if not demo_path.exists():
+                    ui.notify(f'Demo file not found: {demo_path}', color='red'); return
+                try:
+                    df = load_dataframe(str(demo_path))
+                except Exception as e:
+                    ui.notify(f'Could not load demo data: {e}', color='red'); return
+                CURRENT_USER = user_select.value.strip() or 'Demo User'
+                EXTRACTION_CSV_PATH = str(demo_path)
+                _login_bottom.set_visibility(False)
+                _finish_login(demo=True)
+
+            def launch_tutorial():
+                _tut_fn_holder[0]()
+
+            ui.button('Try Demo', on_click=launch_demo).props('outline').classes('text-gray-500 text-sm')
+
+            def launch_demo_with_tutorial():
+                # Load demo first, then open tutorial inside the app
+                global CURRENT_USER, df, EXTRACTION_CSV_PATH
+                demo_path = Path(__file__).parent / 'watney_demo_data.csv'
+                if not demo_path.exists():
+                    ui.notify(f'Demo file not found: {demo_path}', color='red'); return
+                try:
+                    df = load_dataframe(str(demo_path))
+                except Exception as e:
+                    ui.notify(f'Could not load demo data: {e}', color='red'); return
+                CURRENT_USER = user_select.value.strip() or 'Demo User'
+                EXTRACTION_CSV_PATH = str(demo_path)
+                _login_bottom.set_visibility(False)
+                _finish_login(demo=True)
+                # Open tutorial after the page fully renders
+                ui.timer(0.8, lambda: _tut_fn_holder[0]() if _tut_fn_holder[0] else None, once=True)
+
+            ui.button('Tutorial + Demo', on_click=launch_demo_with_tutorial).props('outline').classes('text-blue-500 text-sm')
+
+        ui.label('Demo uses synthetic data · No data saved to database').classes('text-xs text-gray-400')
+
+    # Hide the bottom bar once logged in
+    def _hide_login_bottom():
+        _login_bottom.set_visibility(False)
 
     # ── Scroll ────────────────────────────────────────────────────────────────
     def scroll_to_note(report_id, evidence_text=''):
@@ -541,10 +729,37 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         intervals = sorted(selected.get('intervals', []), key=lambda x: sort_date_key(x.get('start_date')))
         with agent_output:
             for iv in intervals:
-                ui.label(f"{iv.get('start_date','unknown')} → {iv.get('end_date','unknown')}").classes('left-sub-text')
+                start_date = iv.get('start_date', 'unknown')
+                end_date   = iv.get('end_date', 'unknown')
+                start_rat  = (iv.get('start_date_rationale') or {})
+                end_rat    = (iv.get('end_date_rationale') or {})
+                start_text = start_rat.get('text') or ''
+                end_text   = end_rat.get('text') or ''
+                start_rid  = start_rat.get('report_id') or ''
+                end_rid    = end_rat.get('report_id') or ''
+
+                with ui.row().classes('w-full items-center gap-1 flex-wrap'):
+                    ui.label(f"{start_date} → {end_date}").classes('text-xs')
+                    if start_rid or start_text:
+                        ui.button(
+                            'Start source',
+                            on_click=lambda rid=start_rid, ev=start_text: scroll_to_note(rid, ev)
+                        ).props('dense flat size=xs')
+                    if end_rid or end_text:
+                        ui.button(
+                            'End source',
+                            on_click=lambda rid=end_rid, ev=end_text: scroll_to_note(rid, ev)
+                        ).props('dense flat size=xs')
 
     # ── Progression card ──────────────────────────────────────────────────────
-    def progression_card(event, patient_id, agent_names, extraction):
+    def _agent_matches_plan(agent_name, plan_text):
+        """Return True if agent_name appears as a word in plan_text."""
+        if not agent_name or not plan_text:
+            return False
+        pattern = r'(?i)\b' + re.escape(agent_name.strip()) + r'\b'
+        return bool(re.search(pattern, plan_text))
+
+    def progression_card(event, patient_id, agent_names, extraction, active_agent=None):
         progression_date = event.get('progression_date', 'unknown')
         confidence       = event.get('confidence_level', 'unknown')
         rationale        = event.get('progression_date_rationale', {}) or {}
@@ -552,8 +767,14 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         note_date        = rationale.get('note_date', 'unknown')
         author           = rationale.get('author', 'unknown')
         evidence         = rationale.get('text', '')
+        treatment_plan   = event.get('treatment_plan_at_time') or ''
 
-        with ui.card().classes('w-full compact-card'):
+        # Highlight card if selected agent matches treatment plan at time of progression
+        matches = active_agent and _agent_matches_plan(active_agent, treatment_plan)
+        card_style = ('border-left: 4px solid #f59e0b; background: #fffbeb;'
+                      if matches else '')
+
+        with ui.card().classes('w-full compact-card').style(card_style):
             with ui.row().classes('w-full justify-between items-center'):
                 ui.label(progression_date).classes('left-main-text font-bold')
                 ui.label(f'Confidence: {confidence}').classes('left-sub-text')
@@ -562,6 +783,9 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.label(f'Note Date: {note_date}').classes('left-sub-text')
             ui.label(f'Author: {author}').classes('left-sub-text')
             ui.label(f'Report ID: {report_id}').classes('left-sub-text')
+            if treatment_plan:
+                match_style = 'font-weight:600; color:#b45309;' if matches else ''
+                ui.label(f'Treatment at time: {treatment_plan}').classes('left-sub-text').style(match_style)
 
             if evidence:
                 ui.markdown(f'> {evidence}').classes('left-evidence text-xs')
@@ -570,7 +794,14 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 on_click=lambda rid=report_id, ev=evidence: scroll_to_note(rid, ev)
             ).props('dense flat')
 
-            saved              = get_saved_annotation(patient_id, report_id, progression_date)
+            # Demo-aware saved annotation lookup
+            def _get_saved_ann(pid, rid, pdate):
+                _cr = _db().cursor()
+                _cr.execute("""SELECT agent,agent_start,agent_start_source,agent_end,agent_end_source
+                    FROM annotations WHERE DFCI_MRN=? AND report_id=? AND progression_date=? LIMIT 1""",
+                    (pid, rid, pdate))
+                return _cr.fetchone()
+            saved              = _get_saved_ann(patient_id, report_id, progression_date)
             saved_agent        = saved['agent']              if saved else None
             saved_agent_start  = saved['agent_start']        if saved else None
             saved_start_source = saved['agent_start_source'] if saved else None
@@ -606,8 +837,9 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 if ls: parts.append(f'LLM start: {ls}')
                 if le: parts.append(f'LLM end: {le}')
                 _lbl.set_text('  ·  '.join(parts))
-                if not _si.value and ls: _si.value = ls
-                if not _ei.value and le: _ei.value = le
+                # Always overwrite with LLM dates when agent selection changes
+                _si.value = ls or ''
+                _ei.value = le or ''
 
             selected_agent.on('update:model-value', lambda _: refresh_dates(selected_agent.value))
 
@@ -635,9 +867,15 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 a_start_src = 'manual' if rs  and rs  != ls else ('LLM' if ls else None)
                 a_end       = clean_date_input(re_) if re_ else le
                 a_end_src   = 'manual' if re_ and re_ != le else ('LLM' if le else None)
-                save_agent_assignment(rid, av, pid, progression_date=prog_dt, evidence=ev,
-                                      agent_start=a_start, agent_start_source=a_start_src,
-                                      agent_end=a_end, agent_end_source=a_end_src)
+                _demo_upsert({
+                    'DFCI_MRN': str(pid).strip(), 'progression_date': prog_dt,
+                    'progression_source': 'LLM', 'agent': av, 'evidence': ev,
+                    'report_id': rid, 'determined_by': None, 'user': CURRENT_USER,
+                    'modification_timestamp': datetime.now().isoformat(timespec='seconds'),
+                    'agent_start': a_start, 'agent_start_source': a_start_src,
+                    'agent_end': a_end, 'agent_end_source': a_end_src,
+                })
+                ui.notify(f'Saved: {av}', color='green')
                 if _refresh_summary_holder[0]:
                     _refresh_summary_holder[0]()
 
@@ -650,18 +888,32 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
             def do_remove(rid=report_id, pid=patient_id, prog_dt=progression_date,
                           sel=selected_agent, si=start_input, ei=end_input, lbl=llm_hint):
-                delete_agent_assignment(rid, pid, prog_dt)
+                if _demo_mode[0]:
+                    _cr = _db().cursor()
+                    _cr.execute("""DELETE FROM annotations
+                        WHERE DFCI_MRN=? AND report_id=? AND progression_date=?""",
+                        (pid, rid, prog_dt))
+                    _db().commit()
+                    ui.notify('Agent assignment removed', color='orange')
+                else:
+                    delete_agent_assignment(rid, pid, prog_dt)
                 sel.value = None
                 si.value  = ''
                 ei.value  = ''
                 lbl.set_text('')
+                if _refresh_summary_holder[0]:
+                    _refresh_summary_holder[0]()
 
             ui.button('Remove Agent', on_click=do_remove).props('dense outline')
 
     # ── Patient list ──────────────────────────────────────────────────────────
     def show_patient_list():
-        refresh_annotations_df()
-        annotated_mrns = set(annotations_df['DFCI_MRN'].apply(safe_str).tolist())
+        if _demo_mode[0]:
+            _pa = pd.read_sql_query("SELECT DISTINCT DFCI_MRN FROM annotations", _db())
+            annotated_mrns = set(_pa['DFCI_MRN'].apply(safe_str).tolist())
+        else:
+            refresh_annotations_df()
+            annotated_mrns = set(annotations_df['DFCI_MRN'].apply(safe_str).tolist())
         with ui.dialog() as dlg, ui.card().classes('w-[520px] max-h-[80vh] overflow-y-auto'):
             ui.label('Patient List').classes('text-lg font-bold mb-1')
             ui.label(f'{len(df)} patients total · {len(annotated_mrns)} with annotations').classes('text-xs text-gray-500 mb-2')
@@ -687,11 +939,15 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
     # ── Export ────────────────────────────────────────────────────────────────
     def export_csv():
-        df_out = load_annotations_df()
+        if _demo_mode[0]:
+            df_out = pd.read_sql_query("SELECT * FROM annotations", _db())
+        else:
+            df_out = load_annotations_df()
         if df_out.empty: ui.notify('No annotations to export', color='orange'); return
         import base64
+        prefix = 'watney_demo_' if _demo_mode[0] else 'watney_annotations_'
+        fn = f"{prefix}{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         b64 = base64.b64encode(df_out.to_csv(index=False).encode()).decode()
-        fn = f"watney_annotations_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         ui.run_javascript(f"""
             const a=document.createElement('a');
             a.href='data:text/csv;base64,{b64}';a.download='{fn}';
@@ -931,9 +1187,83 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         dlg.open()
 
     # ── Render patient ────────────────────────────────────────────────────────
-    def render_patient(index):
+    _demo_mode = [False]   # mutable flag
+    _demo_conn = [None]    # in-memory SQLite for demo annotations
+
+    DEMO_SCHEMA = """
+    CREATE TABLE IF NOT EXISTS annotations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        DFCI_MRN TEXT NOT NULL, progression_date TEXT,
+        progression_source TEXT, agent TEXT, evidence TEXT,
+        report_id TEXT, determined_by TEXT, user TEXT,
+        modification_timestamp TEXT,
+        agent_start TEXT, agent_start_source TEXT,
+        agent_end TEXT, agent_end_source TEXT)"""
+
+    def _ensure_demo_conn():
+        """Create the in-memory DB if not already open."""
+        if _demo_conn[0] is None:
+            import sqlite3 as _sq
+            dc = _sq.connect(':memory:', check_same_thread=False)
+            dc.row_factory = _sq.Row
+            dc.execute(DEMO_SCHEMA)
+            dc.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_demo
+                ON annotations(DFCI_MRN,progression_date,progression_source,report_id)""")
+            dc.commit()
+            _demo_conn[0] = dc
+        return _demo_conn[0]
+
+    def _db():
+        # Return the active DB connection (demo or real)
+        return _ensure_demo_conn() if _demo_mode[0] else conn
+
+    def _reset_demo_conn():
+        # Close and discard the in-memory demo DB
+        if _demo_conn[0] is not None:
+            try: _demo_conn[0].close()
+            except: pass
+            _demo_conn[0] = None
+
+    def _demo_upsert(row):
+        """Insert or update an annotation in the active DB (demo or real)."""
+        if not _demo_mode[0]:
+            upsert_annotation(row)
+            return
+        dc = _db()
+        cr = dc.cursor()
+        cr.execute("""SELECT id FROM annotations
+            WHERE DFCI_MRN=? AND report_id=? AND progression_date=? AND progression_source=?""",
+            (row['DFCI_MRN'], row['report_id'], row['progression_date'], row['progression_source']))
+        existing = cr.fetchone()
+        if existing:
+            cr.execute("""UPDATE annotations
+                SET agent=?,evidence=?,determined_by=?,user=?,modification_timestamp=?,
+                    agent_start=?,agent_start_source=?,agent_end=?,agent_end_source=?
+                WHERE id=?""",
+                (row['agent'], row['evidence'], row['determined_by'], row.get('user'),
+                 row['modification_timestamp'], row.get('agent_start'), row.get('agent_start_source'),
+                 row.get('agent_end'), row.get('agent_end_source'), existing['id']))
+        else:
+            cr.execute("""INSERT INTO annotations
+                (DFCI_MRN,progression_date,progression_source,agent,evidence,
+                 report_id,determined_by,user,modification_timestamp,
+                 agent_start,agent_start_source,agent_end,agent_end_source)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (row['DFCI_MRN'], row['progression_date'], row['progression_source'],
+                 row['agent'], row['evidence'], row['report_id'],
+                 row['determined_by'], row.get('user'), row['modification_timestamp'],
+                 row.get('agent_start'), row.get('agent_start_source'),
+                 row.get('agent_end'), row.get('agent_end_source')))
+        dc.commit()
+
+    def render_patient(index, demo=None):
         global agent_output, progression_sort_order, user_label
-        refresh_annotations_df()
+        if demo is not None:
+            if demo and not _demo_mode[0]:
+                _reset_demo_conn()   # fresh DB each time demo is entered
+            _demo_mode[0] = demo
+        if not _demo_mode[0]:
+            refresh_annotations_df()
         left_panel.clear()
         right_panel.clear()
 
@@ -952,10 +1282,14 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         """)
 
         with left_panel:
-            with ui.column().classes('gap-0'):
-                ui.label(f'WATNEY {_major_version(WATNEY_VERSION)}').classes('text-2xl font-bold')
-                ui.label('Developed by Justin Vinh @ DFCI').classes('text-[11px] text-gray-500 leading-tight')
-                user_label = ui.label(f'User: {CURRENT_USER or "not set"}').classes('text-xs text-gray-600')
+            with ui.row().classes('w-full items-start justify-between no-wrap'):
+                with ui.column().classes('gap-0'):
+                    ui.label(f'WATNEY {_major_version(WATNEY_VERSION)}').classes('text-2xl font-bold')
+                    ui.label('Developed by Justin Vinh @ DFCI').classes('text-[11px] text-gray-500 leading-tight')
+                    user_label = ui.label(f'User: {CURRENT_USER or "not set"}').classes('text-xs text-gray-600')
+                    if _demo_mode[0]:
+                        ui.label('⚠ DEMO MODE').classes('text-xs text-amber-600 font-bold')
+                ui.button('Logout', on_click=_do_logout).props('dense flat size=sm').classes('text-gray-400')
             ui.separator().classes('mb-4')
 
             ui.label(f'Patient {patient_id} | Row {index+1}/{len(df)}').classes('text-xl font-bold')
@@ -964,11 +1298,15 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             summary_container = ui.column().classes('w-full')
 
             def refresh_summary():
-                refresh_annotations_df()
                 summary_container.clear()
                 summary_rows = []
-                patient_annotations = annotations_df[
-                    annotations_df['DFCI_MRN'].apply(safe_str) == safe_str(patient_id)
+                if _demo_mode[0]:
+                    _df_ann = pd.read_sql_query("SELECT * FROM annotations", _db())
+                else:
+                    refresh_annotations_df()
+                    _df_ann = annotations_df
+                patient_annotations = _df_ann[
+                    _df_ann['DFCI_MRN'].apply(safe_str) == safe_str(patient_id)
                 ]
                 for _, ann in patient_annotations.iterrows():
                     prog_date = normalize_any_date(ann.get('progression_date'))
@@ -1012,7 +1350,10 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 agent_output = ui.column()
                 if drug_names:
                     dropdown = ui.select(drug_names, value=drug_names[0]).classes('w-full')
-                    dropdown.on('update:model-value', lambda _: update_agent_display(dropdown.value, extraction))
+                    def on_agent_dropdown_change(_):
+                        update_agent_display(dropdown.value, extraction)
+                        render_events(active_agent=dropdown.value)
+                    dropdown.on('update:model-value', on_agent_dropdown_change)
                     update_agent_display(drug_names[0], extraction)
 
             ui.separator()
@@ -1020,17 +1361,43 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.separator()
 
             ui.label('LLM Progression Events').classes('text-sm font-bold')
-            ordered = sorted(events, key=lambda x: sort_date_key(x.get('progression_date')),
-                             reverse=(progression_sort_order == 'Descending'))
-            if not ordered:
-                ui.label('No LLM progression events').classes('text-xs text-gray-500')
-            else:
-                for event in ordered:
-                    progression_card(event, patient_id, drug_names, extraction)
+            highlight_notice = ui.label('').classes('text-xs text-amber-600 font-semibold')
+
+            events_container = ui.column().classes('w-full')
+
+            def render_events(active_agent=None):
+                events_container.clear()
+                ordered = sorted(events, key=lambda x: sort_date_key(x.get('progression_date')),
+                                 reverse=(progression_sort_order == 'Descending'))
+                any_match = active_agent and any(
+                    _agent_matches_plan(active_agent, e.get('treatment_plan_at_time') or '')
+                    for e in ordered
+                )
+                if any_match:
+                    highlight_notice.set_text(f'▶ Highlighted card: likely progression event for {active_agent}')
+                else:
+                    highlight_notice.set_text('')
+                with events_container:
+                    if not ordered:
+                        ui.label('No LLM progression events').classes('text-xs text-gray-500')
+                    else:
+                        for event in ordered:
+                            try:
+                                progression_card(event, patient_id, drug_names, extraction,
+                                                 active_agent=active_agent)
+                            except Exception as _card_err:
+                                ui.label(f'[Card error: {_card_err}]').classes('text-xs text-red-400')
+
+            render_events(active_agent=drug_names[0] if drug_names else None)
 
             ui.separator()
             ui.label('Clinician Added Progression Events').classes('text-sm font-bold')
-            clin_events = get_clinician_events(patient_id)
+            if _demo_mode[0]:
+                clin_events = pd.read_sql_query(
+                    """SELECT * FROM annotations WHERE DFCI_MRN=? AND progression_source='manual'
+                    ORDER BY progression_date""", _db(), params=(normalize_patient_id(patient_id),))
+            else:
+                clin_events = get_clinician_events(patient_id)
             if clin_events.empty:
                 ui.label('No Clinician added progression events').classes('text-xs text-gray-500')
             else:
@@ -1043,8 +1410,13 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                         ui.label(f"Evidence: {crow.get('evidence','')}").classes('text-xs')
                         ui.label(f"Determined by: {crow.get('determined_by','')}").classes('text-xs')
                         def delete_clin_event(rid=crow['report_id'], card=clin_card):
-                            cursor.execute("DELETE FROM annotations WHERE report_id=?", (rid,))
-                            save_annotations()
+                            if _demo_mode[0]:
+                                _cr = _db().cursor()
+                                _cr.execute("DELETE FROM annotations WHERE report_id=?", (rid,))
+                                _db().commit()
+                            else:
+                                cursor.execute("DELETE FROM annotations WHERE report_id=?", (rid,))
+                                save_annotations()
                             ui.notify('Clinician event removed', color='orange')
                             card.delete()
                             refresh_summary()
@@ -1125,17 +1497,10 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             def save_clinician_event():
                 row_d = df.iloc[current_patient_index]
                 pid   = normalize_patient_id(row_d[PATIENT_ID_COL])
-
-                # Mandatory: agent
                 if not clinician_agent.value:
-                    ui.notify('Agent is required', color='red')
-                    return
-
-                # Mandatory: progression date
+                    ui.notify('Agent is required', color='red'); return
                 if not clinician_date.value or not clinician_date.value.strip():
-                    ui.notify('Progression date is required', color='red')
-                    return
-
+                    ui.notify('Progression date is required', color='red'); return
                 d = re.sub(r'\D', '', clinician_date.value or '')
                 if d and len(d) != 8: ui.notify('Date must be YYYYMMDD', color='red'); return
                 cleaned_date = f"{d[:4]}-{d[4:6]}-{d[6:8]}" if d else None
@@ -1151,12 +1516,20 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 a_start_src = 'manual' if rs  and rs  != ls else ('LLM' if ls else None)
                 a_end       = clean_date_input(re_) if re_ else le
                 a_end_src   = 'manual' if re_ and re_ != le else ('LLM' if le else None)
-                save_clinician_progression_event(
-                    patient_id=pid, progression_date=cleaned_date,
-                    agent=clinician_agent.value, evidence=(clinician_evidence.value or ''),
-                    report_id=rid, determined_by=clinician_determined_by.value,
-                    agent_start=a_start, agent_start_source=a_start_src,
-                    agent_end=a_end, agent_end_source=a_end_src)
+                _demo_upsert({
+                    'DFCI_MRN': str(pid).strip(), 'progression_date': cleaned_date,
+                    'progression_source': 'manual',
+                    'agent': clinician_agent.value,
+                    'evidence': (clinician_evidence.value or ''),
+                    'report_id': rid,
+                    'determined_by': clinician_determined_by.value,
+                    'user': CURRENT_USER,
+                    'modification_timestamp': datetime.now().isoformat(timespec='seconds'),
+                    'agent_start': a_start, 'agent_start_source': a_start_src,
+                    'agent_end': a_end, 'agent_end_source': a_end_src,
+                })
+                if not _demo_mode[0]: pass  # upsert already handles real DB notify
+                else: ui.notify('Clinician event saved', color='green')
                 clinician_date.value = ''; clinician_evidence.value = ''
                 clinician_determined_by.value = ''; clinician_agent.value = None
                 clinician_report_id.value = ''; clin_start_input.value = ''
@@ -1208,20 +1581,44 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         row = df.iloc[current_patient_index]
         patient_id = normalize_patient_id(row[PATIENT_ID_COL])
         # Find the most recently modified annotation for this patient
-        cursor.execute("""
+        _cr = _db().cursor()
+        _cr.execute("""
             SELECT id FROM annotations
             WHERE DFCI_MRN = ?
             ORDER BY modification_timestamp DESC
             LIMIT 1
         """, (patient_id,))
-        row_result = cursor.fetchone()
+        row_result = _cr.fetchone()
         if not row_result:
             ui.notify('Nothing to undo', color='orange')
             return
-        cursor.execute("DELETE FROM annotations WHERE id = ?", (row_result['id'],))
-        save_annotations()
+        _cr.execute("DELETE FROM annotations WHERE id = ?", (row_result['id'],))
+        _db().commit()
+        if not _demo_mode[0]:
+            refresh_annotations_df()
         ui.notify('Last annotation undone', color='orange')
         render_patient(current_patient_index)
+
+    # ── Logout ───────────────────────────────────────────────────────────────
+    def _do_logout():
+        global CURRENT_USER, df, EXTRACTION_CSV_PATH, UI_LOCKED
+        _reset_demo_conn()   # discard demo data permanently
+        _demo_mode[0] = False
+        CURRENT_USER  = None
+        UI_LOCKED     = True
+        # Restore real CSV path from config (don't clear it)
+        _cfg_r = load_config()
+        if _cfg_r.get('csv_path') and Path(_cfg_r['csv_path']).exists():
+            EXTRACTION_CSV_PATH = _cfg_r['csv_path']
+            df = load_dataframe(EXTRACTION_CSV_PATH)
+        else:
+            EXTRACTION_CSV_PATH = None
+            df = None
+        left_panel.clear()
+        right_panel.clear()
+        lock_overlay.set_visibility(True)
+        _login_bottom.set_visibility(True)
+        if nav_bar is not None: nav_bar.style('display:none')
 
     # ── Nav bar ───────────────────────────────────────────────────────────────
     nav_bar = ui.element('div').classes('bottom-nav').style('display:none')
@@ -1237,6 +1634,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.button('Patient List', on_click=_show_patient_list).props('dense outline')
             ui.button('Export',       on_click=_export_csv).props('dense outline')
             ui.button('Settings',     on_click=_show_settings).props('dense outline')
+
 
     # ── Keyboard navigation ───────────────────────────────────────────────────
     # Guard: only fire on keydown (not keyup) and not on repeat
@@ -1256,8 +1654,11 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 # =============================================================================
 
 def main():
+    # Resolve favicon relative to this file so it works when installed as a package
+    _favicon = Path(__file__).parent / 'watney_icon.ico'
+    _favicon_arg = str(_favicon) if _favicon.exists() else None
     try:
-        ui.run(title='WATNEY', reload=False)
+        ui.run(title='WATNEY', reload=False, favicon=_favicon_arg)
     except KeyboardInterrupt:
         pass
 

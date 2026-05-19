@@ -1,0 +1,114 @@
+DFCI_MRN,all_notes,generation
+MRN000001,"Note Number: 1
+Note Report ID: RPT001
+Note Date: 2022-03-10
+Note Dept: Neuro-Oncology
+Note Author: Dr. Sarah Chen
+
+Patient is a 58-year-old male with newly diagnosed glioblastoma multiforme (GBM), IDH-wildtype, MGMT methylated, diagnosed following resection in February 2022. He is now beginning concurrent temozolomide with radiation therapy. KPS 80. MRI post-op shows expected post-surgical changes with no definite residual enhancing tumor.
+
+Plan: Concurrent temozolomide 75 mg/m2 daily with radiation 60 Gy in 30 fractions.
+
+====================
+Note Number: 2
+Note Report ID: RPT002
+Note Date: 2022-08-15
+Note Dept: Neuro-Oncology
+Note Author: Dr. Sarah Chen
+
+Patient has completed concurrent chemoradiation and is now on cycle 3 of adjuvant temozolomide 150 mg/m2 days 1-5 of 28. He is tolerating therapy reasonably well with mild fatigue and nausea. MRI from 2022-08-01 shows stable postoperative changes with no new enhancing lesion. Continue adjuvant temozolomide.
+
+====================
+Note Number: 3
+Note Report ID: RPT003
+Note Date: 2023-01-20
+Note Dept: Neuro-Oncology
+Note Author: Dr. Sarah Chen
+
+Follow-up MRI from 2023-01-15 demonstrates a new area of nodular enhancement in the right frontal lobe at the resection margin measuring 2.1 x 1.8 cm, increased from prior. Since completing radiation in June 2022, there has been progressive enhancement raising concern for true progression versus pseudoprogression… the pattern and timing are more consistent with tumor recurrence. Patient is being taken off temozolomide. Bevacizumab will be initiated.
+
+Plan: Discontinue temozolomide. Start bevacizumab 10 mg/kg IV every 2 weeks.
+
+====================
+Note Number: 4
+Note Report ID: RPT004
+Note Date: 2023-07-10
+Note Dept: Neuro-Oncology
+Note Author: Dr. Sarah Chen
+
+Patient has been on bevacizumab for 6 months. MRI from 2023-07-05 shows new areas of FLAIR signal abnormality and subtle enhancement outside the prior radiation field, consistent with tumor progression on bevacizumab… further growth despite therapy. Plan to discuss enrollment in a clinical trial.
+","{""systemic_therapy"": {""agents"": [{""drug_name"": ""Temozolomide"", ""drug_name_rationale"": {""text"": ""beginning concurrent temozolomide with radiation therapy""}, ""intervals"": [{""start_date"": ""2022-03-10"", ""start_date_rationale"": {""text"": ""beginning concurrent temozolomide with radiation therapy"", ""report_id"": ""RPT001""}, ""end_date"": ""2023-01-20"", ""end_date_rationale"": {""text"": ""Patient is being taken off temozolomide. Bevacizumab will be initiated"", ""report_id"": ""RPT003""}, ""end_date_type"": ""treatment_end""}]}, {""drug_name"": ""Bevacizumab"", ""drug_name_rationale"": {""text"": ""Start bevacizumab 10 mg/kg IV every 2 weeks""}, ""intervals"": [{""start_date"": ""2023-01-20"", ""start_date_rationale"": {""text"": ""Start bevacizumab 10 mg/kg IV every 2 weeks"", ""report_id"": ""RPT003""}, ""end_date"": ""2023-07-10"", ""end_date_rationale"": {""text"": ""further growth despite therapy. Plan to discuss enrollment in a clinical trial"", ""report_id"": ""RPT004""}, ""end_date_type"": ""treatment_end""}]}]}, ""progression"": {""progression_events"": [{""progression_date"": ""2023-01-15"", ""progression_date_rationale"": {""text"": ""new area of nodular enhancement in the right frontal lobe at the resection margin measuring 2.1 x 1.8 cm, increased from prior"", ""report_id"": ""RPT003"", ""note_date"": ""2023-01-20"", ""author"": ""Dr. Sarah Chen""}, ""treatment_plan_at_time"": ""Temozolomide"", ""treatment_plan_at_time_rationale"": {""text"": ""Patient is being taken off temozolomide""}, ""confidence_level"": ""high""}, {""progression_date"": ""2023-07-05"", ""progression_date_rationale"": {""text"": ""new areas of FLAIR signal abnormality and subtle enhancement outside the prior radiation field, consistent with tumor progression on bevacizumab\u2026 further growth despite therapy"", ""report_id"": ""RPT004"", ""note_date"": ""2023-07-10"", ""author"": ""Dr. Sarah Chen""}, ""treatment_plan_at_time"": ""Bevacizumab"", ""treatment_plan_at_time_rationale"": {""text"": ""further growth despite therapy""}, ""confidence_level"": ""high""}]}}"
+MRN000002,"Note Number: 1
+Note Report ID: RPT101
+Note Date: 2021-05-12
+Note Dept: Neuro-Oncology
+Note Author: Dr. James Patel
+
+55-year-old female with anaplastic astrocytoma, IDH-mutant, 1p/19q non-codeleted, diagnosed after partial resection in April 2021. She is initiating PCV chemotherapy (procarbazine, CCNU, vincristine) following radiation. MGMT methylated. KPS 90.
+
+Plan: PCV chemotherapy, cycle 1 of 6. Procarbazine 60 mg/m2 days 8-21, CCNU 110 mg/m2 day 1, vincristine 1.4 mg/m2 days 8 and 29.
+
+====================
+Note Number: 2
+Note Report ID: RPT102
+Note Date: 2022-02-20
+Note Dept: Neuro-Oncology
+Note Author: Dr. James Patel
+
+Patient completed 6 cycles of PCV in November 2021. She is now in observation. MRI from 2022-02-15 is stable with no new enhancement. Continue surveillance imaging every 3 months.
+
+====================
+Note Number: 3
+Note Report ID: RPT103
+Note Date: 2022-11-08
+Note Dept: Neuro-Oncology
+Note Author: Dr. James Patel
+
+MRI from 2022-11-01 demonstrates new T1 enhancing lesion in the left temporal lobe measuring 1.5 cm, not present on prior imaging. Since completing PCV in November 2021, this new lesion is highly concerning for recurrence… the location corresponds to prior abnormality and has grown significantly. Patient presents with worsening headaches and new word-finding difficulty. Plan to initiate temozolomide.
+
+====================
+Note Number: 4
+Note Report ID: RPT104
+Note Date: 2023-08-14
+Note Dept: Neuro-Oncology
+Note Author: Dr. James Patel
+
+Patient has completed 12 cycles of temozolomide. MRI from 2023-08-10 shows significant increase in the left temporal enhancement now measuring 3.2 cm with new satellite lesions… clear radiographic progression on temozolomide. Patient has worsening aphasia. Referral to clinical trial.
+","{""systemic_therapy"": {""agents"": [{""drug_name"": ""PCV"", ""drug_name_rationale"": {""text"": ""PCV chemotherapy, cycle 1 of 6""}, ""intervals"": [{""start_date"": ""2021-05-12"", ""start_date_rationale"": {""text"": ""initiating PCV chemotherapy following radiation"", ""report_id"": ""RPT101""}, ""end_date"": ""2021-11-30"", ""end_date_rationale"": {""text"": ""Patient completed 6 cycles of PCV in November 2021"", ""report_id"": ""RPT102""}, ""end_date_type"": ""treatment_end""}]}, {""drug_name"": ""Temozolomide"", ""drug_name_rationale"": {""text"": ""Plan to initiate temozolomide""}, ""intervals"": [{""start_date"": ""2022-11-08"", ""start_date_rationale"": {""text"": ""Plan to initiate temozolomide"", ""report_id"": ""RPT103""}, ""end_date"": ""2023-08-14"", ""end_date_rationale"": {""text"": ""clear radiographic progression on temozolomide"", ""report_id"": ""RPT104""}, ""end_date_type"": ""treatment_end""}]}]}, ""progression"": {""progression_events"": [{""progression_date"": ""2022-11-01"", ""progression_date_rationale"": {""text"": ""new T1 enhancing lesion in the left temporal lobe measuring 1.5 cm, not present on prior imaging\u2026 highly concerning for recurrence"", ""report_id"": ""RPT103"", ""note_date"": ""2022-11-08"", ""author"": ""Dr. James Patel""}, ""treatment_plan_at_time"": ""PCV"", ""treatment_plan_at_time_rationale"": {""text"": ""Since completing PCV in November 2021""}, ""confidence_level"": ""high""}, {""progression_date"": ""2023-08-10"", ""progression_date_rationale"": {""text"": ""significant increase in the left temporal enhancement now measuring 3.2 cm with new satellite lesions\u2026 clear radiographic progression on temozolomide"", ""report_id"": ""RPT104"", ""note_date"": ""2023-08-14"", ""author"": ""Dr. James Patel""}, ""treatment_plan_at_time"": ""Temozolomide"", ""treatment_plan_at_time_rationale"": {""text"": ""clear radiographic progression on temozolomide""}, ""confidence_level"": ""high""}]}}"
+MRN000003,"Note Number: 1
+Note Report ID: RPT201
+Note Date: 2020-09-15
+Note Dept: Neuro-Oncology
+Note Author: Dr. Maria Lopez
+
+67-year-old male with grade 3 oligodendroglioma, IDH-mutant, 1p/19q codeleted, newly diagnosed after gross total resection in August 2020. He is starting adjuvant temozolomide chemotherapy. KPS 90. Baseline MRI post-op shows complete resection.
+
+Plan: Adjuvant temozolomide 150 mg/m2 days 1-5 every 28 days for 12 cycles.
+
+====================
+Note Number: 2
+Note Report ID: RPT202
+Note Date: 2021-10-20
+Note Dept: Neuro-Oncology
+Note Author: Dr. Maria Lopez
+
+Patient has completed 12 cycles of adjuvant temozolomide in September 2021. He is now under surveillance. MRI from 2021-10-15 shows no enhancing disease. FLAIR signal is stable. Continue quarterly surveillance.
+
+====================
+Note Number: 3
+Note Report ID: RPT203
+Note Date: 2022-09-06
+Note Dept: Neuro-Oncology
+Note Author: Dr. Maria Lopez
+
+MRI from 2022-09-01 reveals a new 1.8 cm area of nodular FLAIR hyperintensity with faint peripheral enhancement in the left frontal lobe. Since completing temozolomide in September 2021, this represents new radiographic activity… the enhancement pattern is suspicious for early recurrence. Patient reports new mild cognitive slowing. Plan to re-biopsy and initiate lomustine.
+
+====================
+Note Number: 4
+Note Report ID: RPT204
+Note Date: 2023-05-11
+Note Dept: Neuro-Oncology
+Note Author: Dr. Maria Lopez
+
+Re-biopsy confirmed recurrent oligodendroglioma. Patient has completed 4 cycles of lomustine 110 mg/m2 every 6 weeks. MRI from 2023-05-08 shows significant enlargement of the left frontal lesion now 4.5 cm with surrounding edema and new leptomeningeal enhancement… progressive disease on lomustine. Patient has significant worsening of cognitive function. Best supportive care discussed.
+","{""systemic_therapy"": {""agents"": [{""drug_name"": ""Temozolomide"", ""drug_name_rationale"": {""text"": ""starting adjuvant temozolomide chemotherapy""}, ""intervals"": [{""start_date"": ""2020-09-15"", ""start_date_rationale"": {""text"": ""starting adjuvant temozolomide chemotherapy"", ""report_id"": ""RPT201""}, ""end_date"": ""2021-09-30"", ""end_date_rationale"": {""text"": ""Patient has completed 12 cycles of adjuvant temozolomide in September 2021"", ""report_id"": ""RPT202""}, ""end_date_type"": ""treatment_end""}]}, {""drug_name"": ""Lomustine"", ""drug_name_rationale"": {""text"": ""Plan to re-biopsy and initiate lomustine""}, ""intervals"": [{""start_date"": ""2022-09-06"", ""start_date_rationale"": {""text"": ""Plan to re-biopsy and initiate lomustine"", ""report_id"": ""RPT203""}, ""end_date"": ""2023-05-11"", ""end_date_rationale"": {""text"": ""progressive disease on lomustine. Patient has significant worsening"", ""report_id"": ""RPT204""}, ""end_date_type"": ""treatment_end""}]}]}, ""progression"": {""progression_events"": [{""progression_date"": ""2022-09-01"", ""progression_date_rationale"": {""text"": ""new 1.8 cm area of nodular FLAIR hyperintensity with faint peripheral enhancement in the left frontal lobe\u2026 suspicious for early recurrence"", ""report_id"": ""RPT203"", ""note_date"": ""2022-09-06"", ""author"": ""Dr. Maria Lopez""}, ""treatment_plan_at_time"": ""Temozolomide"", ""treatment_plan_at_time_rationale"": {""text"": ""Since completing temozolomide in September 2021""}, ""confidence_level"": ""medium""}, {""progression_date"": ""2023-05-08"", ""progression_date_rationale"": {""text"": ""significant enlargement of the left frontal lesion now 4.5 cm with surrounding edema and new leptomeningeal enhancement\u2026 progressive disease on lomustine"", ""report_id"": ""RPT204"", ""note_date"": ""2023-05-11"", ""author"": ""Dr. Maria Lopez""}, ""treatment_plan_at_time"": ""Lomustine"", ""treatment_plan_at_time_rationale"": {""text"": ""progressive disease on lomustine""}, ""confidence_level"": ""high""}]}}"

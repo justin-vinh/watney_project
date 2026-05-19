@@ -18,7 +18,7 @@ try:
     from importlib.metadata import version as _pkg_version
     WATNEY_VERSION = _pkg_version('watney')
 except Exception:
-    WATNEY_VERSION = '4'  # fallback for dev / non-package runs
+    WATNEY_VERSION = '5'  # fallback for dev / non-package runs
 
 def _major_version(v):
     """Return only the major version number, e.g. '3.0.1' -> '3'."""
@@ -444,24 +444,73 @@ def build_page():
     # ── CSS ───────────────────────────────────────────────────────────────────
     ui.add_head_html(f"""<style>
 body{{font-family:Arial;}}
-.left-pane{{height:94vh;overflow-y:auto;padding-right:8px;}}
-.right-pane{{height:94vh;overflow-y:auto;border-left:1px solid #ddd;padding-left:8px;}}
+.left-pane{{height:94vh;overflow-y:auto;padding-right:8px;box-sizing:border-box;}}
+.right-pane{{height:94vh;overflow-y:auto;padding-left:8px;box-sizing:border-box;min-width:0;}}
+#panel-divider{{width:4px;flex-shrink:0;cursor:col-resize;
+    align-self:stretch;background:#e2e8f0;transition:background 0.15s;z-index:10;}}
+#panel-divider:hover,#panel-divider.dragging{{background:#93c5fd;}}
 .note-card{{border:1px solid #ddd;border-radius:4px;padding:4px 6px;margin-bottom:6px;background:#fafafa;}}
 .note-meta{{display:flex;gap:10px;font-size:10px;color:#666;margin-bottom:3px;border-bottom:1px solid #eee;padding-bottom:2px;}}
 pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;}}
 .evidence-highlight{{background-color:#ffe066;padding:2px 3px;border-radius:2px;font-weight:bold;}}
 .agent-box,.annotation-box{{border:1px solid #ddd;padding:8px;border-radius:5px;margin-bottom:10px;}}
-.bottom-nav{{position:fixed;bottom:15px;left:15px;right:0;width:calc(33.333% - 15px);display:flex;
+.bottom-nav{{position:fixed;bottom:15px;left:15px;right:0;width:calc(37% - 15px);display:flex;
     align-items:center;justify-content:space-between;gap:6px;z-index:9999;
     background:rgba(255,255,255,0.95);padding:5px 12px;border-radius:6px;
     box-shadow:0 2px 8px rgba(0,0,0,0.12);}}
 .patient-list-row:hover{{background:#f0f4ff;cursor:pointer;}}
 </style>""")
 
+    # ── Panel resize JS ──────────────────────────────────────────────────────
+    ui.add_head_html('''
+<script>
+(function initResize() {
+  var divider  = document.getElementById('panel-divider');
+  var leftPane = document.querySelector('.left-pane');
+  if (!divider || !leftPane) { setTimeout(initResize, 100); return; }
+
+  var dragging = false, startX = 0, startW = 0;
+
+  divider.addEventListener('mousedown', function(e) {
+    dragging = true;
+    startX   = e.clientX;
+    startW   = leftPane.getBoundingClientRect().width;
+    divider.classList.add('dragging');
+    document.body.style.cursor     = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var rowW = leftPane.parentElement
+               ? leftPane.parentElement.getBoundingClientRect().width
+               : window.innerWidth;
+    var newW = Math.min(Math.max(startW + (e.clientX - startX), 300), rowW - 200);
+    leftPane.style.width      = newW + 'px';
+    leftPane.style.minWidth   = newW + 'px';
+    leftPane.style.flexShrink = '0';
+    leftPane.style.flexGrow   = '0';
+    var nav = document.querySelector('.bottom-nav');
+    if (nav) nav.style.width = (newW - 15) + 'px';
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove('dragging');
+    document.body.style.cursor     = '';
+    document.body.style.userSelect = '';
+  });
+})();
+</script>
+''')
+
     # ── Layout ────────────────────────────────────────────────────────────────
-    with ui.row().classes('w-full no-wrap'):
-        left_panel  = ui.column().classes('left-pane w-1/3')
-        right_panel = ui.column().classes('right-pane w-2/3')
+    with ui.row().classes('w-full no-wrap').style('overflow:hidden;height:94vh;align-items:stretch;'):
+        left_panel  = ui.column().classes('left-pane').style('min-width:300px;width:37%;flex-shrink:0;flex-grow:0;')
+        ui.element('div').props('id=panel-divider')
+        right_panel = ui.column().classes('right-pane').style('flex:1 1 0;min-width:180px;')
 
     lock_overlay = ui.column().classes(
         'fixed inset-0 flex items-center justify-center z-[9999]'
@@ -547,36 +596,65 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
     _tut_fn_holder = [None]
 
     def _do_launch_tutorial():
-        steps =         steps = [
+        steps = [
+            ('Welcome to WATNEY',
+             'WATNEY helps you review and annotate LLM-extracted oncology progression events from clinical notes. '
+             'Use the Tutorial + Demo button to explore with synthetic patients, or log in with your own data. '
+             'Navigate these steps with the buttons below or by clicking the dots.',
+             '🏥'),
             ('Log In',
-             'Enter your name and the path to your extraction CSV. WATNEY remembers your CSV path between sessions.',
+             'Enter your name — this tags every annotation you make. '
+             'If a CSV path is already saved, you go straight in. '
+             'Otherwise you will be prompted to enter the path to your extraction CSV. '
+             'WATNEY remembers it for next time.',
              '👤'),
+            ('The Layout',
+             'The left panel is your annotation workspace. The right panel shows the full clinical notes. '
+             'Drag the thin bar between the panels left or right to resize them to your liking.',
+             '⟺'),
             ('Navigate Patients',
-             'Use Prev / Next buttons or the ← → arrow keys to move between patients. Click "Patient List" to jump to any patient directly.',
+             'Use Prev / Next in the nav bar, or press ← → on your keyboard, to move between patients. '
+             '"Patient List" shows all patients and whether each has been annotated — click Go to jump directly to any of them.',
              '⟵⟶'),
-            ('Agent Intervals',
-             'Select an agent from the dropdown to see its treatment intervals. Click "Start source" or "End source" to jump to the supporting note in the right panel.',
+            ('Progression Summary',
+             'At the top of the left panel, the Progression Summary table shows every assigned progression event for the current patient: '
+             'date, agent, start/end dates, source, and annotator. It updates the moment you save or remove an assignment.',
+             '📋'),
+            ('Agent Intervals Box',
+             'Select an agent from the dropdown to see its treatment intervals extracted by the LLM. '
+             'Each interval shows its start and end date. '
+             'Click Start source or End source to jump to the note that supports that date and highlight the evidence.',
              '📅'),
-            ('Progression Cards',
-             'Each amber-highlighted card is the likely progression event for the selected agent — its treatment plan at the time matches the agent name.',
+            ('Progression Cards — Highlighted in Amber',
+             'Each LLM-extracted progression event appears as a card. '
+             'The card highlighted in amber is the most likely progression event for the currently selected agent — '
+             'its "treatment plan at time of progression" field matches the agent name. '
+             'A notice above the cards tells you which agent is matched.',
              '🟡'),
-            ('Save an Assignment',
-             'In a progression card, pick the agent, review the auto-filled start/end dates, and click "Save Agent Assignment". The Progression Summary updates immediately.',
+            ('Assign an Agent to a Progression',
+             'Inside a progression card: select the responsible agent, review the auto-filled start and end dates (they come from the LLM), '
+             'edit if needed (blur the field to auto-format to YYYY-MM-DD), then click Save Agent Assignment. '
+             'Click Source to jump to the note and highlight the supporting evidence.',
              '💾'),
-            ('Edit Dates',
-             'Start and End date fields auto-fill from the LLM. You can edit them freely — blur the field to auto-format to YYYY-MM-DD.',
-             '✏️'),
-            ('Clinician Events',
-             'Manually add a progression event at the bottom of the left panel. Agent and Progression Date are required.',
-             '🩺'),
-            ('Undo',
-             'Remove Agent clears a specific card assignment in place. The Undo button on the nav bar deletes the most recent annotation for the current patient.',
+            ('Remove and Undo',
+             'Remove Agent clears the assignment on a specific card without leaving the page. '
+             'The Undo button in the nav bar deletes the most recently modified annotation for the current patient. '
+             'Both actions update the Progression Summary immediately.',
              '↩'),
+            ('Add a Clinician Progression Event',
+             'Scroll to the bottom of the left panel to manually add a progression event. '
+             'Agent and Progression Date are required. '
+             'Start and end dates auto-fill when you pick an agent — edit them freely. '
+             'Add custom agents not in the LLM extraction using the Add field.',
+             '🩺'),
             ('Export',
-             'Click Export to download all annotations as a CSV. In demo mode, only demo data is exported — your real database is never affected.',
+             'Click Export in the nav bar to download all annotations as a timestamped CSV. '
+             'In demo mode, only demo annotations are exported — your real database is never touched.',
              '📥'),
             ('Settings',
-             'Adjust font size, change file paths, relocate the annotations folder, and check for WATNEY updates — all from the Settings dialog.',
+             'Open Settings from the nav bar to: adjust the note text font size, view or change the CSV and database paths, '
+             'move the annotations folder, and check for WATNEY updates from PyPI. '
+             'Use Logout (top-right of the left panel) to return to the login screen at any time.',
              '⚙️'),
         ]
 
@@ -699,7 +777,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
             ui.button('Tutorial + Demo', on_click=launch_demo_with_tutorial).props('outline').classes('text-blue-500 text-sm')
 
-        ui.label('Demo uses synthetic data · No data saved to database').classes('text-xs text-gray-400')
+        ui.label('Demo uses synthetic data · nothing saved to your database').classes('text-xs text-gray-400')
 
     # Hide the bottom bar once logged in
     def _hide_login_bottom():
@@ -1327,20 +1405,20 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                     else:
                         with ui.column().classes('w-full gap-1'):
                             with ui.row().classes('w-full text-xs font-bold border-b pb-1'):
-                                ui.label('Prog. Date').style('width:85px')
-                                ui.label('Agent').style('width:100px')
-                                ui.label('Start').style('width:78px')
-                                ui.label('End').style('width:78px')
-                                ui.label('Source').style('width:60px')
-                                ui.label('User').style('width:70px')
+                                ui.label('Prog. Date').style('width:88px;flex-shrink:0')
+                                ui.label('Agent').style('flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')
+                                ui.label('Start').style('width:80px;flex-shrink:0')
+                                ui.label('End').style('width:80px;flex-shrink:0')
+                                ui.label('Source').style('width:52px;flex-shrink:0')
+                                ui.label('User').style('width:62px;flex-shrink:0')
                             for rd in summary_rows:
-                                with ui.row().classes('w-full text-xs'):
-                                    ui.label(rd['date']).style('width:85px')
-                                    ui.label(rd['agent']).style('width:100px')
-                                    ui.label(rd['agent_start']).style('width:78px')
-                                    ui.label(rd['agent_end']).style('width:78px')
-                                    ui.label(rd['source']).style('width:60px')
-                                    ui.label(rd['user']).style('width:70px')
+                                with ui.row().classes('w-full text-xs').style('flex-wrap:nowrap'):
+                                    ui.label(rd['date']).style('width:88px;flex-shrink:0')
+                                    ui.label(rd['agent']).style('flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')
+                                    ui.label(rd['agent_start']).style('width:80px;flex-shrink:0')
+                                    ui.label(rd['agent_end']).style('width:80px;flex-shrink:0')
+                                    ui.label(rd['source']).style('width:52px;flex-shrink:0')
+                                    ui.label(rd['user']).style('width:62px;flex-shrink:0')
 
             _refresh_summary_holder[0] = refresh_summary
             refresh_summary()
@@ -1438,18 +1516,6 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             clinician_agent = ui.select(all_agent_names or [], label='Agent').classes('w-full')
             clin_llm_hint = ui.label('').classes('text-xs text-gray-400')
 
-            def on_clin_agent_change(_):
-                ls = get_agent_first_start(extraction, clinician_agent.value)
-                le = get_agent_last_end(extraction, clinician_agent.value)
-                parts = []
-                if ls: parts.append(f'LLM start: {ls}')
-                if le: parts.append(f'LLM end: {le}')
-                clin_llm_hint.set_text('  ·  '.join(parts))
-                if not clin_start_input.value and ls: clin_start_input.value = ls
-                if not clin_end_input.value and le: clin_end_input.value = le
-
-            clinician_agent.on('update:model-value', on_clin_agent_change)
-
             with ui.row().classes('w-full items-center gap-1'):
                 custom_agent_input = ui.input(label='Add custom agent', placeholder='e.g. Pembrolizumab').classes('flex-grow')
                 def add_custom_agent():
@@ -1467,6 +1533,20 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             with ui.row().classes('w-full gap-2'):
                 clin_start_input = ui.input(label='Agent start date', placeholder='YYYY-MM-DD').classes('flex-grow')
                 clin_end_input   = ui.input(label='Agent end date',   placeholder='YYYY-MM-DD').classes('flex-grow')
+
+            # Defined AFTER inputs so the closure can always reach them
+            def on_clin_agent_change(_):
+                ls = get_agent_first_start(extraction, clinician_agent.value)
+                le = get_agent_last_end(extraction, clinician_agent.value)
+                parts = []
+                if ls: parts.append(f'LLM start: {ls}')
+                if le: parts.append(f'LLM end: {le}')
+                clin_llm_hint.set_text('  ·  '.join(parts))
+                # Always overwrite — matches LLM card behaviour
+                clin_start_input.value = ls or ''
+                clin_end_input.value   = le or ''
+
+            clinician_agent.on('update:model-value', on_clin_agent_change)
 
             def _fmt_clin_date(field):
                 v = field.value

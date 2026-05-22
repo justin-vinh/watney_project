@@ -111,8 +111,9 @@ ON annotations (DFCI_MRN, progression_date, progression_source, report_id)
 """)
 
 for _col, _type in [
-    ('agent_start', 'TEXT'), ('agent_start_source', 'TEXT'),
-    ('agent_end',   'TEXT'), ('agent_end_source',   'TEXT'),
+    ('agent_start',      'TEXT'), ('agent_start_source', 'TEXT'),
+    ('agent_end',        'TEXT'), ('agent_end_source',   'TEXT'),
+    ('exclusion_flag',   'TEXT'), ('exclusion_reason',   'TEXT'),
 ]:
     try:
         cursor.execute(f'ALTER TABLE annotations ADD COLUMN {_col} {_type}')
@@ -184,18 +185,28 @@ def upsert_annotation(new_row):
             existing['id']
         ))
     else:
+        # Inherit any existing exclusion flag for this patient
+        cursor.execute("""
+            SELECT exclusion_flag, exclusion_reason FROM annotations
+            WHERE DFCI_MRN=? AND exclusion_flag IS NOT NULL LIMIT 1
+        """, (new_row['DFCI_MRN'],))
+        _excl_row = cursor.fetchone()
+        _eflag  = _excl_row['exclusion_flag']   if _excl_row else None
+        _ereason = _excl_row['exclusion_reason'] if _excl_row else None
         cursor.execute("""
         INSERT INTO annotations (
             DFCI_MRN, progression_date, progression_source, agent, evidence,
             report_id, determined_by, user, modification_timestamp,
-            agent_start, agent_start_source, agent_end, agent_end_source)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            agent_start, agent_start_source, agent_end, agent_end_source,
+            exclusion_flag, exclusion_reason)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             new_row['DFCI_MRN'], new_row['progression_date'], new_row['progression_source'],
             new_row['agent'], new_row['evidence'], new_row['report_id'],
             new_row['determined_by'], new_row.get('user'), new_row['modification_timestamp'],
             new_row.get('agent_start'), new_row.get('agent_start_source'),
             new_row.get('agent_end'),   new_row.get('agent_end_source'),
+            _eflag, _ereason,
         ))
     save_annotations()
 
@@ -262,6 +273,8 @@ def get_clinician_events(patient_id):
     ORDER BY progression_date
     """, conn, params=(patient_id,))
 
+# exclusion_flag and exclusion_reason are stamped across all rows for a patient.
+
 def safe_json_loads(x):
     if pd.isna(x): return {}
     try: return json.loads(x)
@@ -278,6 +291,7 @@ def normalize_any_date(x):
     if pd.isna(x): return None
     x = str(x).strip()
     if not x or x.lower() == 'nan': return None
+    if x.upper() == 'NA': return 'NA'
     for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d", "%m/%d/%y", "%m/%d/%Y"):
         try: return datetime.strptime(x, fmt).date().isoformat()
         except: continue
@@ -290,6 +304,8 @@ def sort_date_key(x):
 
 def clean_date_input(raw):
     if not raw: return None
+    # --- CHANGE 3: preserve NA ---
+    if raw.strip().upper() == 'NA': return 'NA'
     digits = re.sub(r'\D', '', raw.strip())
     if len(digits) == 8:
         return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
@@ -335,13 +351,9 @@ def parse_notes(notes_text):
 # =============================================================================
 
 def highlight_evidence(note_text, evidence_text):
-    """Split evidence on ellipsis markers, find every segment in the note,
-    and wrap each match in a highlight span. The first match gets the
-    scroll-anchor id so the browser can jump to it."""
     if not evidence_text:
         return (html.escape(note_text), False)
 
-    # Split on literal ellipses (... or unicode …) to get individual segments
     segments = [
         re.sub(r'\s+', ' ', s.strip())
         for s in re.split(r'\.\.\.|…', evidence_text)
@@ -350,7 +362,6 @@ def highlight_evidence(note_text, evidence_text):
     if not segments:
         return (html.escape(note_text), False)
 
-    # Build a list of (start, end) spans for every segment found in the note
     all_spans = []
     for segment in segments:
         escaped = re.sub(r'\\ ', r'\\s+', re.escape(segment))
@@ -363,7 +374,6 @@ def highlight_evidence(note_text, evidence_text):
     if not all_spans:
         return (html.escape(note_text), False)
 
-    # Sort and merge overlapping spans
     all_spans.sort()
     merged = [all_spans[0]]
     for s, e in all_spans[1:]:
@@ -372,7 +382,6 @@ def highlight_evidence(note_text, evidence_text):
         else:
             merged.append((s, e))
 
-    # Build the highlighted HTML; first span gets the scroll-anchor id
     result = []
     prev = 0
     first = True
@@ -418,7 +427,6 @@ def build_notes_html(notes, highlighted_report=None, evidence_text=None):
 # PAGE
 # =============================================================================
 
-# Track active browser connections to warn about multiple instances
 _active_clients = {'count': 0}
 
 
@@ -432,9 +440,8 @@ def build_page():
     current_patient_index  = 0
     agent_output           = None
     progression_sort_order = 'Ascending'
-    _refresh_summary_holder = [None]  # mutable ref so progression_card can always call current version
+    _refresh_summary_holder = [None]
 
-    # Track this client connection
     _active_clients['count'] += 1
     from nicegui import app as _ngapp
     @_ngapp.on_disconnect
@@ -592,7 +599,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         if not CURRENT_USER: ui.notify('Set username first', color='red'); return False
         return True
 
-    # ── Tutorial function (accessible from anywhere in build_page scope) ────────
+    # ── Tutorial ──────────────────────────────────────────────────────────────
     _tut_fn_holder = [None]
 
     def _do_launch_tutorial():
@@ -629,11 +636,12 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
              'Each LLM-extracted progression event appears as a card. '
              'The card highlighted in amber is the most likely progression event for the currently selected agent — '
              'its "treatment plan at time of progression" field matches the agent name. '
-             'A notice above the cards tells you which agent is matched.',
+             'A notice above the cards tells you which agent is matched. The matched card always appears at the top.',
              '🟡'),
             ('Assign an Agent to a Progression',
              'Inside a progression card: select the responsible agent, review the auto-filled start and end dates (they come from the LLM), '
              'edit if needed (blur the field to auto-format to YYYY-MM-DD), then click Save Agent Assignment. '
+             'Use "No End Date" to record that no end date is known. '
              'Click Source to jump to the note and highlight the supporting evidence.',
              '💾'),
             ('Remove and Undo',
@@ -643,10 +651,13 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
              '↩'),
             ('Add a Clinician Progression Event',
              'Scroll to the bottom of the left panel to manually add a progression event. '
-             'Agent and Progression Date are required. '
-             'Start and end dates auto-fill when you pick an agent — edit them freely. '
-             'Add custom agents not in the LLM extraction using the Add field.',
+             'Agent is required. Enter a Progression Date OR press NO PROGRESSION for patients who did not progress on an agent. '
+             'Start and end dates auto-fill when you pick an agent — use "No End Date" if applicable.',
              '🩺'),
+            ('Exclude Patient',
+             'Use the Exclude Patient button near the patient header to flag a patient for exclusion. '
+             'A confirmation dialog will ask for a reason. Excluded patients show a banner and can be un-excluded.',
+             '🚫'),
             ('Export',
              'Click Export in the nav bar to download all annotations as a timestamped CSV. '
              'In demo mode, only demo annotations are exported — your real database is never touched.',
@@ -658,36 +669,32 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
              '⚙️'),
         ]
 
-        step_idx = [0]  # mutable to update from closures
+        step_idx = [0]
 
         with ui.dialog() as tut_dlg, ui.card().classes('w-[540px]'):
-            # Header
             with ui.row().classes('w-full items-center justify-between mb-2'):
                 ui.label('WATNEY Tutorial').classes('text-lg font-bold')
                 progress_label = ui.label('').classes('text-xs text-gray-400')
 
             ui.separator()
 
-            # Step content area — single step at a time
             icon_label  = ui.label('').classes('text-4xl text-center w-full mt-4')
             title_label = ui.label('').classes('text-base font-bold text-blue-700 text-center w-full mt-2')
             body_label  = ui.label('').classes('text-sm text-gray-700 text-center w-full mt-2 leading-relaxed px-4')
 
-            ui.element('div').style('height:24px;')  # spacer
+            ui.element('div').style('height:24px;')
 
-            # Navigation row
             with ui.row().classes('w-full justify-between items-center mt-4'):
                 prev_btn = ui.button('← Back').props('flat dense')
                 dot_row  = ui.row().classes('gap-1 items-center')
                 next_btn = ui.button('Next →').props('dense')
 
-            # Build dots
             dots = []
             with dot_row:
                 for i in range(len(steps)):
                     d = ui.element('div').style(
-                'width:8px;height:8px;border-radius:50%;'
-                'background:#cbd5e1;cursor:pointer;'
+                        'width:8px;height:8px;border-radius:50%;'
+                        'background:#cbd5e1;cursor:pointer;'
                     )
                     dots.append(d)
 
@@ -701,8 +708,8 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 next_btn.set_text('Finish' if i == len(steps)-1 else 'Next →')
                 for j, d in enumerate(dots):
                     d.style(
-                'width:8px;height:8px;border-radius:50%;cursor:pointer;'
-                + ('background:#3b82f6;' if j == i else 'background:#cbd5e1;')
+                        'width:8px;height:8px;border-radius:50%;cursor:pointer;'
+                        + ('background:#3b82f6;' if j == i else 'background:#cbd5e1;')
                     )
 
             def go_prev():
@@ -731,7 +738,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
     _tut_fn_holder[0] = _do_launch_tutorial
 
-    # ── Demo + Tutorial — fixed bottom bar (outside login overlay) ────────────
+    # ── Demo + Tutorial bottom bar ────────────────────────────────────────────
     _login_bottom = ui.element('div').style(
         'position:fixed;bottom:20px;left:0;right:0;'
         'display:flex;flex-direction:column;align-items:center;gap:6px;z-index:10000;'
@@ -759,7 +766,6 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.button('Try Demo', on_click=launch_demo).props('outline').classes('text-gray-500 text-sm')
 
             def launch_demo_with_tutorial():
-                # Load demo first, then open tutorial inside the app
                 global CURRENT_USER, df, EXTRACTION_CSV_PATH
                 demo_path = Path(__file__).parent / 'watney_demo_data.csv'
                 if not demo_path.exists():
@@ -772,14 +778,12 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 EXTRACTION_CSV_PATH = str(demo_path)
                 _login_bottom.set_visibility(False)
                 _finish_login(demo=True)
-                # Open tutorial after the page fully renders
                 ui.timer(0.8, lambda: _tut_fn_holder[0]() if _tut_fn_holder[0] else None, once=True)
 
             ui.button('Tutorial + Demo', on_click=launch_demo_with_tutorial).props('outline').classes('text-blue-500 text-sm')
 
         ui.label('Demo uses synthetic data · nothing saved to your database').classes('text-xs text-gray-400')
 
-    # Hide the bottom bar once logged in
     def _hide_login_bottom():
         _login_bottom.set_visibility(False)
 
@@ -831,7 +835,6 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
     # ── Progression card ──────────────────────────────────────────────────────
     def _agent_matches_plan(agent_name, plan_text):
-        """Return True if agent_name appears as a word in plan_text."""
         if not agent_name or not plan_text:
             return False
         pattern = r'(?i)\b' + re.escape(agent_name.strip()) + r'\b'
@@ -847,7 +850,6 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         evidence         = rationale.get('text', '')
         treatment_plan   = event.get('treatment_plan_at_time') or ''
 
-        # Highlight card if selected agent matches treatment plan at time of progression
         matches = active_agent and _agent_matches_plan(active_agent, treatment_plan)
         card_style = ('border-left: 4px solid #f59e0b; background: #fffbeb;'
                       if matches else '')
@@ -872,13 +874,13 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 on_click=lambda rid=report_id, ev=evidence: scroll_to_note(rid, ev)
             ).props('dense flat')
 
-            # Demo-aware saved annotation lookup
             def _get_saved_ann(pid, rid, pdate):
                 _cr = _db().cursor()
                 _cr.execute("""SELECT agent,agent_start,agent_start_source,agent_end,agent_end_source
                     FROM annotations WHERE DFCI_MRN=? AND report_id=? AND progression_date=? LIMIT 1""",
                     (pid, rid, pdate))
                 return _cr.fetchone()
+
             saved              = _get_saved_ann(patient_id, report_id, progression_date)
             saved_agent        = saved['agent']              if saved else None
             saved_agent_start  = saved['agent_start']        if saved else None
@@ -892,13 +894,18 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 label='Assign agent'
             ).classes('w-full')
 
-            with ui.row().classes('w-full gap-2 mt-1'):
+            # --- CHANGE 3: No End Date button on same row as start/end ---
+            with ui.row().classes('w-full gap-2 mt-1 items-center'):
                 start_input = ui.input(label='Start date', placeholder='YYYY-MM-DD').classes('flex-grow')
                 end_input   = ui.input(label='End date',   placeholder='YYYY-MM-DD').classes('flex-grow')
+                ui.button('No End Date',
+                    on_click=lambda ei=end_input: ei.set_value('NA')
+                ).props('dense outline').classes('text-gray-500')
 
+            # --- CHANGE 3: guard NA in blur formatter ---
             def _fmt_date_field(field):
                 v = field.value
-                if not v: return
+                if not v or v.strip().upper() == 'NA': return
                 d = re.sub(r'\D', '', v)
                 if len(d) == 8:
                     field.set_value(f"{d[:4]}-{d[4:6]}-{d[6:8]}")
@@ -915,13 +922,11 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 if ls: parts.append(f'LLM start: {ls}')
                 if le: parts.append(f'LLM end: {le}')
                 _lbl.set_text('  ·  '.join(parts))
-                # Always overwrite with LLM dates when agent selection changes
                 _si.value = ls or ''
                 _ei.value = le or ''
 
             selected_agent.on('update:model-value', lambda _: refresh_dates(selected_agent.value))
 
-            # Populate for saved agent on load
             if saved_agent and saved_agent in agent_names:
                 ls = get_agent_first_start(extraction, saved_agent)
                 le = get_agent_last_end(extraction, saved_agent)
@@ -992,21 +997,38 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         else:
             refresh_annotations_df()
             annotated_mrns = set(annotations_df['DFCI_MRN'].apply(safe_str).tolist())
-        with ui.dialog() as dlg, ui.card().classes('w-[520px] max-h-[80vh] overflow-y-auto'):
+
+        # Load exclusion state: one row per patient (take any row with a flag)
+        try:
+            _excl_df = pd.read_sql_query(
+                "SELECT DFCI_MRN, exclusion_flag FROM annotations WHERE exclusion_flag IS NOT NULL GROUP BY DFCI_MRN",
+                _db()
+            )
+            excluded_mrns = set(
+                _excl_df.loc[_excl_df['exclusion_flag'] == 'True', 'DFCI_MRN'].apply(safe_str).tolist()
+            )
+        except Exception:
+            excluded_mrns = set()
+
+        with ui.dialog() as dlg, ui.card().classes('w-[620px] max-h-[80vh] overflow-y-auto'):
             ui.label('Patient List').classes('text-lg font-bold mb-1')
-            ui.label(f'{len(df)} patients total · {len(annotated_mrns)} with annotations').classes('text-xs text-gray-500 mb-2')
+            ui.label(f'{len(df)} patients total · {len(annotated_mrns)} with annotations · {len(excluded_mrns)} excluded').classes('text-xs text-gray-500 mb-2')
             with ui.row().classes('w-full text-xs font-bold border-b pb-1 mb-1'):
-                ui.label('#').style('width:40px')
-                ui.label('MRN').style('width:160px')
-                ui.label('Assigned Progression').style('width:160px')
+                ui.label('#').style('width:36px')
+                ui.label('MRN').style('width:140px')
+                ui.label('Annotated').style('width:80px')
+                ui.label('Status').style('width:80px')
             for i, row in df.iterrows():
                 pid = normalize_patient_id(row[PATIENT_ID_COL])
                 has = safe_str(pid) in annotated_mrns
-                color = 'color:#16a34a;font-weight:600;' if has else 'color:#dc2626;'
+                is_excl = safe_str(pid) in excluded_mrns
+                ann_color = 'color:#16a34a;font-weight:600;' if has else 'color:#dc2626;'
+                excl_color = 'color:#dc2626;font-weight:600;' if is_excl else 'color:#16a34a;'
                 with ui.row().classes('w-full text-xs items-center patient-list-row rounded px-1'):
-                    ui.label(str(i+1)).style('width:40px;color:#999;')
-                    ui.label(pid).style('width:160px;')
-                    ui.label('Yes' if has else 'No').style(f'width:160px;{color}')
+                    ui.label(str(i+1)).style('width:36px;color:#999;')
+                    ui.label(pid).style('width:140px;')
+                    ui.label('Yes' if has else 'No').style(f'width:80px;{ann_color}')
+                    ui.label('Excluded' if is_excl else 'Included').style(f'width:80px;{excl_color}')
                     def go(idx=i, d=dlg):
                         global current_patient_index
                         current_patient_index = idx; d.close(); render_patient(idx)
@@ -1067,7 +1089,6 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.button('Apply', on_click=apply_font_size).props('dense')
             ui.separator()
 
-            # ── About ────────────────────────────────────────────────────────────
             ui.label('About').classes('text-sm font-semibold mt-1')
             ui.label(
                 'WATNEY is an interactive oncology annotation platform for reviewing and '
@@ -1151,9 +1172,11 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                             progression_date TEXT, progression_source TEXT, agent TEXT,
                             evidence TEXT, report_id TEXT, determined_by TEXT, user TEXT,
                             modification_timestamp TEXT, agent_start TEXT, agent_start_source TEXT,
-                            agent_end TEXT, agent_end_source TEXT)""")
+                            agent_end TEXT, agent_end_source TEXT,
+                            exclusion_flag TEXT, exclusion_reason TEXT)""")
                         for _c, _t in [('agent_start','TEXT'),('agent_start_source','TEXT'),
-                                       ('agent_end','TEXT'),('agent_end_source','TEXT')]:
+                                       ('agent_end','TEXT'),('agent_end_source','TEXT'),
+                                       ('exclusion_flag','TEXT'),('exclusion_reason','TEXT')]:
                             try: new_cursor.execute(f'ALTER TABLE annotations ADD COLUMN {_c} {_t}')
                             except sqlite3.OperationalError: pass
                         new_conn.commit()
@@ -1203,7 +1226,6 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.label(f'Clinician-sourced: {len(stats_df[stats_df["progression_source"]=="manual"]) if not stats_df.empty else 0}').classes('text-xs text-gray-600')
             ui.separator().classes('my-2')
 
-            # ── Updates ──────────────────────────────────────────────────────
             ui.label('Updates').classes('text-sm font-semibold mt-1')
             ui.label(f'Installed version: {WATNEY_VERSION}').classes('text-xs text-gray-600')
             version_status = ui.label('').classes('text-xs text-gray-500 mt-1')
@@ -1264,9 +1286,9 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.button('Close', on_click=dlg.close).props('dense')
         dlg.open()
 
-    # ── Render patient ────────────────────────────────────────────────────────
-    _demo_mode = [False]   # mutable flag
-    _demo_conn = [None]    # in-memory SQLite for demo annotations
+    # ── Demo / real DB plumbing ───────────────────────────────────────────────
+    _demo_mode = [False]
+    _demo_conn = [None]
 
     DEMO_SCHEMA = """
     CREATE TABLE IF NOT EXISTS annotations (
@@ -1276,10 +1298,10 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         report_id TEXT, determined_by TEXT, user TEXT,
         modification_timestamp TEXT,
         agent_start TEXT, agent_start_source TEXT,
-        agent_end TEXT, agent_end_source TEXT)"""
+        agent_end TEXT, agent_end_source TEXT,
+        exclusion_flag TEXT, exclusion_reason TEXT)"""
 
     def _ensure_demo_conn():
-        """Create the in-memory DB if not already open."""
         if _demo_conn[0] is None:
             import sqlite3 as _sq
             dc = _sq.connect(':memory:', check_same_thread=False)
@@ -1292,18 +1314,15 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         return _demo_conn[0]
 
     def _db():
-        # Return the active DB connection (demo or real)
         return _ensure_demo_conn() if _demo_mode[0] else conn
 
     def _reset_demo_conn():
-        # Close and discard the in-memory demo DB
         if _demo_conn[0] is not None:
             try: _demo_conn[0].close()
             except: pass
             _demo_conn[0] = None
 
     def _demo_upsert(row):
-        """Insert or update an annotation in the active DB (demo or real)."""
         if not _demo_mode[0]:
             upsert_annotation(row)
             return
@@ -1322,23 +1341,124 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                  row['modification_timestamp'], row.get('agent_start'), row.get('agent_start_source'),
                  row.get('agent_end'), row.get('agent_end_source'), existing['id']))
         else:
+            # Inherit any existing exclusion flag for this patient
+            _ecr = dc.cursor()
+            _ecr.execute("""
+                SELECT exclusion_flag, exclusion_reason FROM annotations
+                WHERE DFCI_MRN=? AND exclusion_flag IS NOT NULL LIMIT 1
+            """, (row['DFCI_MRN'],))
+            _excl_row = _ecr.fetchone()
+            _eflag   = _excl_row['exclusion_flag']   if _excl_row else None
+            _ereason = _excl_row['exclusion_reason'] if _excl_row else None
             cr.execute("""INSERT INTO annotations
                 (DFCI_MRN,progression_date,progression_source,agent,evidence,
                  report_id,determined_by,user,modification_timestamp,
-                 agent_start,agent_start_source,agent_end,agent_end_source)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 agent_start,agent_start_source,agent_end,agent_end_source,
+                 exclusion_flag,exclusion_reason)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (row['DFCI_MRN'], row['progression_date'], row['progression_source'],
                  row['agent'], row['evidence'], row['report_id'],
                  row['determined_by'], row.get('user'), row['modification_timestamp'],
                  row.get('agent_start'), row.get('agent_start_source'),
-                 row.get('agent_end'), row.get('agent_end_source')))
+                 row.get('agent_end'), row.get('agent_end_source'),
+                 _eflag, _ereason))
         dc.commit()
 
+    def _get_exclusion(patient_id):
+        """Return (exclusion_flag TEXT, exclusion_reason TEXT) from any row for this patient, or None."""
+        try:
+            _cr = _db().cursor()
+            _cr.execute("""
+                SELECT exclusion_flag, exclusion_reason FROM annotations
+                WHERE DFCI_MRN=? AND exclusion_flag IS NOT NULL LIMIT 1
+            """, (str(patient_id).strip(),))
+            return _cr.fetchone()
+        except Exception:
+            return None
+
+    def _set_exclusion(patient_id, flag, reason):
+        """Stamp exclusion_flag and exclusion_reason onto ALL existing rows for this patient.
+        Future rows inherit the flag via upsert_annotation / _demo_upsert."""
+        _cr = _db().cursor()
+        flag_str = 'True' if flag else 'False'
+        _cr.execute("""
+            UPDATE annotations
+            SET exclusion_flag=?, exclusion_reason=?
+            WHERE DFCI_MRN=?
+        """, (flag_str, reason, str(patient_id).strip()))
+        _db().commit()
+        if not _demo_mode[0]:
+            refresh_annotations_df()
+
+    def _show_exclusion_dialog(patient_id, currently_excluded):
+        from nicegui import context as _ctx
+        _page_client = _ctx.slot.parent.client  # capture page client before dialog opens
+
+        action_label = 'Remove Exclusion' if currently_excluded else 'Exclude Patient'
+        with ui.dialog() as excl_dlg, ui.card().classes('w-[440px]'):
+            ui.label(action_label).classes('text-base font-bold')
+            if currently_excluded:
+                ui.label('This patient is currently excluded. Remove the exclusion?').classes('text-sm text-gray-600')
+            else:
+                ui.label('Are you sure you want to exclude this patient?').classes('text-sm text-gray-600')
+            reason_input = ui.textarea(label='Reason (required)').classes('w-full mt-2')
+            reason_input.props('outlined dense')
+            err_label = ui.label('').classes('text-xs text-red-500')
+            status_label = ui.label('').classes('text-sm font-semibold mt-1')
+
+            post_confirm_row = ui.row().classes('w-full justify-end gap-2 mt-2')
+            post_confirm_row.set_visibility(False)
+            action_row = ui.row().classes('w-full justify-end gap-2 mt-3')
+
+            with post_confirm_row:
+                def _go_next(d=excl_dlg):
+                    d.close()
+                    async def _deferred_next():
+                        if current_patient_index < len(df) - 1:
+                            next_patient()
+                        else:
+                            _page_client.run_javascript("console.log('last patient')")
+                    import asyncio
+                    asyncio.ensure_future(_deferred_next())
+                ui.button('Stay on Patient', on_click=excl_dlg.close).props('flat dense')
+                ui.button('Next Patient →', on_click=_go_next).props('dense')
+
+            with action_row:
+                def _do_confirm():
+                    reason = reason_input.value.strip()
+                    if not reason:
+                        err_label.set_text('Please provide a reason.')
+                        return
+                    new_excluded = 0 if currently_excluded else 1
+                    _set_exclusion(patient_id, new_excluded, reason)
+                    if new_excluded:
+                        status_label.set_text('✓ Patient has been excluded.')
+                        status_label.classes('text-red-600', remove='text-green-600')
+                    else:
+                        status_label.set_text('✓ Patient has been re-included.')
+                        status_label.classes('text-green-600', remove='text-red-600')
+                    action_row.set_visibility(False)
+                    reason_input.set_enabled(False)
+                    post_confirm_row.set_visibility(True)
+                    # Render outside dialog slot context using the captured page client
+                    async def _deferred_render():
+                        with _page_client:
+                            render_patient(current_patient_index)
+                    import asyncio
+                    asyncio.ensure_future(_deferred_render())
+
+                ui.button('Cancel', on_click=excl_dlg.close).props('flat dense')
+                ui.button(action_label, on_click=_do_confirm).props(
+                    'dense color=negative' if not currently_excluded else 'dense'
+                )
+        excl_dlg.open()
+
+    # ── Render patient ────────────────────────────────────────────────────────
     def render_patient(index, demo=None):
         global agent_output, progression_sort_order, user_label
         if demo is not None:
             if demo and not _demo_mode[0]:
-                _reset_demo_conn()   # fresh DB each time demo is entered
+                _reset_demo_conn()
             _demo_mode[0] = demo
         if not _demo_mode[0]:
             refresh_annotations_df()
@@ -1370,7 +1490,31 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 ui.button('Logout', on_click=_do_logout).props('dense flat size=sm').classes('text-gray-400')
             ui.separator().classes('mb-4')
 
-            ui.label(f'Patient {patient_id} | Row {index+1}/{len(df)}').classes('text-xl font-bold')
+            # --- CHANGE 2: patient header row with Exclude Patient button ---
+            _excl = _get_exclusion(patient_id)
+            _is_excluded = bool(_excl and _excl['exclusion_flag'] == 'True')
+
+            with ui.row().classes('w-full items-center justify-between'):
+                ui.label(f'Patient {patient_id} | Row {index+1}/{len(df)}').classes('text-xl font-bold')
+                if not _is_excluded:
+                    ui.button(
+                        'Exclude Patient',
+                        on_click=lambda pid=patient_id: _show_exclusion_dialog(pid, False)
+                    ).props('dense outline size=sm')
+
+            if _is_excluded:
+                with ui.card().classes('w-full').style(
+                    'background:#fef2f2;border:1px solid #fca5a5;padding:8px;margin-bottom:6px;'
+                ):
+                    ui.label('⚠ Patient Excluded').classes('text-sm font-bold text-red-600')
+                    ui.label(f'Reason: {_excl["exclusion_reason"] or "No reason given"}').classes(
+                        'text-xs text-red-500'
+                    )
+                    ui.button(
+                        'Un-exclude Patient',
+                        on_click=lambda pid=patient_id: _show_exclusion_dialog(pid, True)
+                    ).props('dense outline size=sm').classes('text-green-700 mt-1')
+
             ui.label('Progression Summary').classes('text-sm font-bold')
 
             summary_container = ui.column().classes('w-full')
@@ -1413,10 +1557,13 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                                 ui.label('User').style('width:62px;flex-shrink:0')
                             for rd in summary_rows:
                                 with ui.row().classes('w-full text-xs').style('flex-wrap:nowrap'):
-                                    ui.label(rd['date']).style('width:88px;flex-shrink:0')
+                                    _date_style = 'width:88px;flex-shrink:0;' + ('color:#d97706;font-weight:600;' if rd['date'] == 'NA' else '')
+                                    _start_style = 'width:80px;flex-shrink:0;' + ('color:#d97706;font-weight:600;' if rd['agent_start'] == 'NA' else '')
+                                    _end_style   = 'width:80px;flex-shrink:0;' + ('color:#d97706;font-weight:600;' if rd['agent_end'] == 'NA' else '')
+                                    ui.label(rd['date']).style(_date_style)
                                     ui.label(rd['agent']).style('flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap')
-                                    ui.label(rd['agent_start']).style('width:80px;flex-shrink:0')
-                                    ui.label(rd['agent_end']).style('width:80px;flex-shrink:0')
+                                    ui.label(rd['agent_start']).style(_start_style)
+                                    ui.label(rd['agent_end']).style(_end_style)
                                     ui.label(rd['source']).style('width:52px;flex-shrink:0')
                                     ui.label(rd['user']).style('width:62px;flex-shrink:0')
 
@@ -1443,14 +1590,16 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
             events_container = ui.column().classes('w-full')
 
+            # --- CHANGE 4: matched card always sorts to top ---
             def render_events(active_agent=None):
                 events_container.clear()
-                ordered = sorted(events, key=lambda x: sort_date_key(x.get('progression_date')),
-                                 reverse=(progression_sort_order == 'Descending'))
-                any_match = active_agent and any(
-                    _agent_matches_plan(active_agent, e.get('treatment_plan_at_time') or '')
-                    for e in ordered
-                )
+                matched   = [e for e in events if active_agent and _agent_matches_plan(active_agent, e.get('treatment_plan_at_time') or '')]
+                unmatched = [e for e in events if not (active_agent and _agent_matches_plan(active_agent, e.get('treatment_plan_at_time') or ''))]
+                matched   = sorted(matched,   key=lambda x: sort_date_key(x.get('progression_date')), reverse=(progression_sort_order == 'Descending'))
+                unmatched = sorted(unmatched, key=lambda x: sort_date_key(x.get('progression_date')), reverse=(progression_sort_order == 'Descending'))
+                ordered   = matched + unmatched
+
+                any_match = bool(matched)
                 if any_match:
                     highlight_notice.set_text(f'▶ Highlighted card: likely progression event for {active_agent}')
                 else:
@@ -1530,11 +1679,14 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                     clinician_agent.update(); custom_agent_input.value = ''
                 ui.button('Add', on_click=add_custom_agent).props('dense outline')
 
-            with ui.row().classes('w-full gap-2'):
+            # --- CHANGE 3: No End Date button in clinician section ---
+            with ui.row().classes('w-full gap-2 items-center'):
                 clin_start_input = ui.input(label='Agent start date', placeholder='YYYY-MM-DD').classes('flex-grow')
                 clin_end_input   = ui.input(label='Agent end date',   placeholder='YYYY-MM-DD').classes('flex-grow')
+                ui.button('No End Date',
+                    on_click=lambda: clin_end_input.set_value('NA')
+                ).props('dense outline').classes('text-gray-500')
 
-            # Defined AFTER inputs so the closure can always reach them
             def on_clin_agent_change(_):
                 ls = get_agent_first_start(extraction, clinician_agent.value)
                 le = get_agent_last_end(extraction, clinician_agent.value)
@@ -1542,15 +1694,15 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 if ls: parts.append(f'LLM start: {ls}')
                 if le: parts.append(f'LLM end: {le}')
                 clin_llm_hint.set_text('  ·  '.join(parts))
-                # Always overwrite — matches LLM card behaviour
                 clin_start_input.value = ls or ''
                 clin_end_input.value   = le or ''
 
             clinician_agent.on('update:model-value', on_clin_agent_change)
 
+            # --- CHANGE 3: guard NA in clinician blur formatter ---
             def _fmt_clin_date(field):
                 v = field.value
-                if not v: return
+                if not v or v.strip().upper() == 'NA': return
                 d = re.sub(r'\D', '', v)
                 if len(d) == 8:
                     field.set_value(f"{d[:4]}-{d[4:6]}-{d[6:8]}")
@@ -1558,7 +1710,31 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             clin_start_input.on('blur', lambda _: _fmt_clin_date(clin_start_input))
             clin_end_input.on('blur',   lambda _: _fmt_clin_date(clin_end_input))
 
-            clinician_date = ui.input(label='Progression Date (YYYY-MM-DD)', placeholder='YYYY-MM-DD').classes('w-full')
+            # --- CHANGE 1: NO PROGRESSION toggle ---
+            _no_progression = [False]
+
+            with ui.row().classes('w-full items-center gap-2'):
+                clinician_date = ui.input(
+                    label='Progression Date (YYYY-MM-DD)', placeholder='YYYY-MM-DD'
+                ).classes('flex-grow')
+                no_prog_btn = ui.button(
+                    'NO PROGRESSION',
+                    on_click=lambda: _toggle_no_progression()
+                ).props('dense outline').classes('text-red-600')
+
+            def _toggle_no_progression():
+                _no_progression[0] = not _no_progression[0]
+                if _no_progression[0]:
+                    clinician_date.set_value('NA')
+                    clinician_date.set_enabled(False)
+                    no_prog_btn.props('dense color=red')
+                    no_prog_btn.classes('text-white', remove='text-red-600')
+                else:
+                    clinician_date.set_value('')
+                    clinician_date.set_enabled(True)
+                    no_prog_btn.props('dense outline')
+                    no_prog_btn.classes('text-red-600', remove='text-white')
+
             def validate_clin_date():
                 v = clinician_date.value
                 if not v: return
@@ -1579,15 +1755,19 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 pid   = normalize_patient_id(row_d[PATIENT_ID_COL])
                 if not clinician_agent.value:
                     ui.notify('Agent is required', color='red'); return
-                if not clinician_date.value or not clinician_date.value.strip():
-                    ui.notify('Progression date is required', color='red'); return
-                d = re.sub(r'\D', '', clinician_date.value or '')
-                if d and len(d) != 8: ui.notify('Date must be YYYYMMDD', color='red'); return
-                cleaned_date = f"{d[:4]}-{d[4:6]}-{d[6:8]}" if d else None
-                if clinician_date.value and not cleaned_date: ui.notify('Invalid date.', color='red'); return
-                rid = (clinician_report_id.value.strip()
-                       if clinician_report_id.value
-                       else f"clinician::{pid}::{datetime.now().timestamp()}")
+
+                # accept NA (no progression) in place of a date
+                if _no_progression[0]:
+                    cleaned_date = 'NA'
+                else:
+                    if not clinician_date.value or not clinician_date.value.strip():
+                        ui.notify('Enter a progression date or press NO PROGRESSION to record no progression', color='red'); return
+                    d = re.sub(r'\D', '', clinician_date.value or '')
+                    if d and len(d) != 8: ui.notify('Date must be YYYYMMDD', color='red'); return
+                    cleaned_date = f"{d[:4]}-{d[4:6]}-{d[6:8]}" if d else None
+                    if clinician_date.value and not cleaned_date: ui.notify('Invalid date.', color='red'); return
+
+                rid = clinician_report_id.value.strip() if clinician_report_id.value.strip() else 'NA'
                 ls = get_agent_first_start(extraction, clinician_agent.value)
                 le = get_agent_last_end(extraction, clinician_agent.value)
                 rs  = (clin_start_input.value or '').strip()
@@ -1608,8 +1788,15 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                     'agent_start': a_start, 'agent_start_source': a_start_src,
                     'agent_end': a_end, 'agent_end_source': a_end_src,
                 })
-                if not _demo_mode[0]: pass  # upsert already handles real DB notify
+                if not _demo_mode[0]: pass
                 else: ui.notify('Clinician event saved', color='green')
+
+                # --- CHANGE 1: reset NO PROGRESSION toggle on save ---
+                _no_progression[0] = False
+                clinician_date.set_enabled(True)
+                no_prog_btn.props('dense outline')
+                no_prog_btn.classes('text-red-600', remove='text-white')
+
                 clinician_date.value = ''; clinician_evidence.value = ''
                 clinician_determined_by.value = ''; clinician_agent.value = None
                 clinician_report_id.value = ''; clin_start_input.value = ''
@@ -1660,7 +1847,6 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         if df is None: return
         row = df.iloc[current_patient_index]
         patient_id = normalize_patient_id(row[PATIENT_ID_COL])
-        # Find the most recently modified annotation for this patient
         _cr = _db().cursor()
         _cr.execute("""
             SELECT id FROM annotations
@@ -1682,11 +1868,10 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
     # ── Logout ───────────────────────────────────────────────────────────────
     def _do_logout():
         global CURRENT_USER, df, EXTRACTION_CSV_PATH, UI_LOCKED
-        _reset_demo_conn()   # discard demo data permanently
+        _reset_demo_conn()
         _demo_mode[0] = False
         CURRENT_USER  = None
         UI_LOCKED     = True
-        # Restore real CSV path from config (don't clear it)
         _cfg_r = load_config()
         if _cfg_r.get('csv_path') and Path(_cfg_r['csv_path']).exists():
             EXTRACTION_CSV_PATH = _cfg_r['csv_path']
@@ -1715,9 +1900,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.button('Export',       on_click=_export_csv).props('dense outline')
             ui.button('Settings',     on_click=_show_settings).props('dense outline')
 
-
     # ── Keyboard navigation ───────────────────────────────────────────────────
-    # Guard: only fire on keydown (not keyup) and not on repeat
     def _on_key(e):
         if not e.action.keydown or e.action.repeat:
             return
@@ -1734,7 +1917,6 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 # =============================================================================
 
 def main():
-    # Resolve favicon relative to this file so it works when installed as a package
     _favicon = Path(__file__).parent / 'watney_icon.ico'
     _favicon_arg = str(_favicon) if _favicon.exists() else None
     try:

@@ -1,114 +1,422 @@
-DFCI_MRN,all_notes,generation
-MRN000001,"Note Number: 1
-Note Report ID: RPT001
-Note Date: 2022-03-10
-Note Dept: Neuro-Oncology
-Note Author: Dr. Sarah Chen
+DFCI_MRN,generation,all_notes
+D000001,"{""systemic_therapy"": {""agents"": [{""drug_name"": ""erlotinib"", ""intervals"": [{""start_date"": ""2021-03-15"", ""end_date"": ""2021-10-05"", ""start_date_rationale"": {""text"": ""plan to initiate erlotinib (Tarceva) 150mg daily"", ""report_id"": ""R1001"", ""note_date"": ""2021-03-15"", ""author"": ""Dr. A. Chen""}, ""end_date_rationale"": {""text"": ""Transition to osimertinib (Tagrisso) 80mg daily"", ""report_id"": ""R1003"", ""note_date"": ""2021-10-05"", ""author"": ""Dr. A. Chen""}}]}, {""drug_name"": ""osimertinib"", ""intervals"": [{""start_date"": ""2021-10-05"", ""end_date"": null, ""start_date_rationale"": {""text"": ""plan to initiate osimertinib (Tagrisso) 80mg daily"", ""report_id"": ""R1003"", ""note_date"": ""2021-10-05"", ""author"": ""Dr. A. Chen""}, ""end_date_rationale"": null}]}]}, ""progression"": {""progression_events"": [{""progression_date"": ""2021-10-05"", ""confidence_level"": ""high"", ""treatment_plan_at_time"": ""erlotinib"", ""progression_date_rationale"": {""text"": ""CT CHEST (2021-09-28): New 1.8cm subpleural nodule right lower lobe. Concern for emerging resistance. EGFR T790M mutation detected."", ""report_id"": ""R1003"", ""note_date"": ""2021-10-05"", ""author"": ""Dr. A. Chen""}}, {""progression_date"": ""2023-02-14"", ""confidence_level"": ""high"", ""treatment_plan_at_time"": ""osimertinib"", ""progression_date_rationale"": {""text"": ""MRI BRAIN: 3 new ring-enhancing lesions consistent with brain metastases. CNS progression on osimertinib."", ""report_id"": ""R1005"", ""note_date"": ""2023-02-14"", ""author"": ""Dr. A. Chen""}}]}, ""diagnosis"": ""NSCLC, EGFR exon 19 deletion, Stage IIIA"", ""molecular"": {""EGFR"": ""exon 19 del"", ""T790M"": ""acquired on erlotinib"", ""ALK"": ""negative"", ""ROS1"": ""negative"", ""PD_L1_TPS"": ""5%""}}","========================================
+Note Number: 1
+Note Report ID: R1001
+Note Date: 2021-03-15
+Note Dept: Oncology
+Note Author: Dr. A. Chen
 
-Patient is a 58-year-old male with newly diagnosed glioblastoma multiforme (GBM), IDH-wildtype, MGMT methylated, diagnosed following resection in February 2022. He is now beginning concurrent temozolomide with radiation therapy. KPS 80. MRI post-op shows expected post-surgical changes with no definite residual enhancing tumor.
 
-Plan: Concurrent temozolomide 75 mg/m2 daily with radiation 60 Gy in 30 fractions.
+REASON FOR VISIT: New patient consultation for biopsy-proven lung adenocarcinoma, right upper lobe.
+DIAGNOSIS: Stage IIIA non-small cell lung carcinoma (NSCLC), EGFR exon 19 deletion positive.
 
-====================
+HISTORY: Mr. James Holloway is a 58-year-old never-smoker presenting with a 3-month history of
+progressive dyspnea and 15-lb weight loss. CT chest showed a 4.2 cm RUL mass with ipsilateral
+mediastinal lymphadenopathy. Brain MRI negative. Biopsy confirmed lung adenocarcinoma.
+Molecular testing: EGFR exon 19 deletion. ALK/ROS1 negative. PD-L1 TPS 5%.
+
+TREATMENT PLAN: Given EGFR exon 19 deletion, plan to initiate erlotinib (Tarceva) 150mg daily.
+Discussed mechanism of EGFR tyrosine kinase inhibition. Common side effects including acneiform
+rash, diarrhea, paronychia reviewed. Patient counseled on photosensitivity. Will monitor LFTs.
+HOLD chemotherapy at this time — EGFR-directed therapy preferred over platinum doublet.
+
+ASSESSMENT: EGFR-mutant NSCLC, good performance status (ECOG 1). Favorable prognosis expected
+with targeted therapy. Patient and family agreeable with treatment plan. Return in 3 weeks.
+
+========================================
 Note Number: 2
-Note Report ID: RPT002
-Note Date: 2022-08-15
-Note Dept: Neuro-Oncology
-Note Author: Dr. Sarah Chen
+Note Report ID: R1002
+Note Date: 2021-04-12
+Note Dept: Oncology
+Note Author: Dr. A. Chen
 
-Patient has completed concurrent chemoradiation and is now on cycle 3 of adjuvant temozolomide 150 mg/m2 days 1-5 of 28. He is tolerating therapy reasonably well with mild fatigue and nausea. MRI from 2022-08-01 shows stable postoperative changes with no new enhancing lesion. Continue adjuvant temozolomide.
 
-====================
+FOLLOW-UP: 4 weeks on erlotinib 150mg daily.
+RESPONSE: Excellent. CT chest shows 40% reduction in primary tumor (partial response by RECIST 1.1).
+Mediastinal nodes significantly reduced. Patient reports improved dyspnea, weight stable.
+TOXICITY: Grade 2 acneiform rash — managed with topical clindamycin and moisturizer. No dose reduction.
+Grade 1 diarrhea — managed with loperamide PRN.
+
+PLAN: Continue erlotinib 150mg daily. Repeat CT in 3 months. Patient doing well, back at work part-time.
+
+========================================
 Note Number: 3
-Note Report ID: RPT003
-Note Date: 2023-01-20
-Note Dept: Neuro-Oncology
-Note Author: Dr. Sarah Chen
+Note Report ID: R1003
+Note Date: 2021-10-05
+Note Dept: Oncology
+Note Author: Dr. A. Chen
 
-Follow-up MRI from 2023-01-15 demonstrates a new area of nodular enhancement in the right frontal lobe at the resection margin measuring 2.1 x 1.8 cm, increased from prior. Since completing radiation in June 2022, there has been progressive enhancement raising concern for true progression versus pseudoprogression… the pattern and timing are more consistent with tumor recurrence. Patient is being taken off temozolomide. Bevacizumab will be initiated.
 
-Plan: Discontinue temozolomide. Start bevacizumab 10 mg/kg IV every 2 weeks.
+FOLLOW-UP: 7 months on erlotinib. 
+CT CHEST (2021-09-28): New 1.8cm subpleural nodule right lower lobe. Primary tumor stable. 
+Concern for emerging resistance. Recommend liquid biopsy / repeat tissue biopsy.
 
-====================
+MOLECULAR TESTING: Plasma ctDNA — EGFR T790M mutation detected (allele fraction 0.8%).
+ASSESSMENT: Acquired resistance to erlotinib, T790M-mediated. Patient progressed on erlotinib.
+
+PLAN: Transition to osimertinib (Tagrisso) 80mg daily — third-generation EGFR TKI with T790M 
+activity and CNS penetration. Discontinue erlotinib. Counseled on side effects: QTc prolongation,
+cardiomyopathy, interstitial lung disease (rare but serious). Baseline EKG obtained — normal QTc.
+Echocardiogram ordered. Follow-up in 4 weeks.
+
+========================================
 Note Number: 4
-Note Report ID: RPT004
-Note Date: 2023-07-10
-Note Dept: Neuro-Oncology
-Note Author: Dr. Sarah Chen
+Note Report ID: R1004
+Note Date: 2022-04-18
+Note Dept: Oncology
+Note Author: Dr. A. Chen
 
-Patient has been on bevacizumab for 6 months. MRI from 2023-07-05 shows new areas of FLAIR signal abnormality and subtle enhancement outside the prior radiation field, consistent with tumor progression on bevacizumab… further growth despite therapy. Plan to discuss enrollment in a clinical trial.
-","{""systemic_therapy"": {""agents"": [{""drug_name"": ""Temozolomide"", ""drug_name_rationale"": {""text"": ""beginning concurrent temozolomide with radiation therapy""}, ""intervals"": [{""start_date"": ""2022-03-10"", ""start_date_rationale"": {""text"": ""beginning concurrent temozolomide with radiation therapy"", ""report_id"": ""RPT001""}, ""end_date"": ""2023-01-20"", ""end_date_rationale"": {""text"": ""Patient is being taken off temozolomide. Bevacizumab will be initiated"", ""report_id"": ""RPT003""}, ""end_date_type"": ""treatment_end""}]}, {""drug_name"": ""Bevacizumab"", ""drug_name_rationale"": {""text"": ""Start bevacizumab 10 mg/kg IV every 2 weeks""}, ""intervals"": [{""start_date"": ""2023-01-20"", ""start_date_rationale"": {""text"": ""Start bevacizumab 10 mg/kg IV every 2 weeks"", ""report_id"": ""RPT003""}, ""end_date"": ""2023-07-10"", ""end_date_rationale"": {""text"": ""further growth despite therapy. Plan to discuss enrollment in a clinical trial"", ""report_id"": ""RPT004""}, ""end_date_type"": ""treatment_end""}]}]}, ""progression"": {""progression_events"": [{""progression_date"": ""2023-01-15"", ""progression_date_rationale"": {""text"": ""new area of nodular enhancement in the right frontal lobe at the resection margin measuring 2.1 x 1.8 cm, increased from prior"", ""report_id"": ""RPT003"", ""note_date"": ""2023-01-20"", ""author"": ""Dr. Sarah Chen""}, ""treatment_plan_at_time"": ""Temozolomide"", ""treatment_plan_at_time_rationale"": {""text"": ""Patient is being taken off temozolomide""}, ""confidence_level"": ""high""}, {""progression_date"": ""2023-07-05"", ""progression_date_rationale"": {""text"": ""new areas of FLAIR signal abnormality and subtle enhancement outside the prior radiation field, consistent with tumor progression on bevacizumab\u2026 further growth despite therapy"", ""report_id"": ""RPT004"", ""note_date"": ""2023-07-10"", ""author"": ""Dr. Sarah Chen""}, ""treatment_plan_at_time"": ""Bevacizumab"", ""treatment_plan_at_time_rationale"": {""text"": ""further growth despite therapy""}, ""confidence_level"": ""high""}]}}"
-MRN000002,"Note Number: 1
-Note Report ID: RPT101
-Note Date: 2021-05-12
-Note Dept: Neuro-Oncology
-Note Author: Dr. James Patel
 
-55-year-old female with anaplastic astrocytoma, IDH-mutant, 1p/19q non-codeleted, diagnosed after partial resection in April 2021. She is initiating PCV chemotherapy (procarbazine, CCNU, vincristine) following radiation. MGMT methylated. KPS 90.
+FOLLOW-UP: 6 months on osimertinib 80mg daily. 
+CT CHEST/ABDOMEN/PELVIS (2022-04-10): Excellent response. New RLL nodule resolved completely.
+Primary lesion now 1.1cm (from 4.2cm at diagnosis). No new lesions. 
+PET scan: No hypermetabolic activity. Near complete metabolic response.
 
-Plan: PCV chemotherapy, cycle 1 of 6. Procarbazine 60 mg/m2 days 8-21, CCNU 110 mg/m2 day 1, vincristine 1.4 mg/m2 days 8 and 29.
+PATIENT STATUS: ECOG 0. Back to full-time work. Reports mild fatigue and occasional diarrhea (grade 1).
+No cardiotoxicity — repeat echo normal. QTc 420ms on EKG.
 
-====================
+ASSESSMENT: Deep partial response to osimertinib. Ongoing disease control.
+PLAN: Continue osimertinib 80mg daily. Next CT in 4 months. CBC, CMP, LFTs within normal limits.
+
+========================================
+Note Number: 5
+Note Report ID: R1005
+Note Date: 2023-02-14
+Note Dept: Oncology
+Note Author: Dr. A. Chen
+
+
+URGENT FOLLOW-UP: New neurological symptoms.
+HISTORY: Patient reports 2 weeks of headache, word-finding difficulty, and right hand tremor.
+MRI BRAIN (2023-02-10): 3 new ring-enhancing lesions — 1.2cm right frontal, 0.8cm left parietal,
+0.6cm right cerebellar. Consistent with brain metastases.
+
+CT CHEST: Stable primary. No new systemic lesions.
+ASSESSMENT: CNS progression on osimertinib. Systemic disease stable — isolated CNS progression.
+
+OPTIONS DISCUSSED:
+1. Stereotactic radiosurgery (SRS) to brain mets + continue osimertinib (preferred if SRS feasible)
+2. Whole brain radiation therapy (WBRT) — avoided if possible given neurocognitive effects  
+3. Clinical trial — MARIPOSA-2 (amivantamab + lazertinib) currently accruing
+4. Switch to amivantamab (Rybrevant) + carboplatin + pemetrexed chemotherapy
+
+PLAN: Neurosurgery and radiation oncology consultations placed. Continue osimertinib pending
+radiation planning. If SRS performed, plan to continue osimertinib and reimage in 6 weeks.
+If systemic progression confirmed, will transition to platinum-based chemotherapy.
+Patient aware of prognosis — maintained excellent outlook, engaged family present.
+"
+D000002,"{""systemic_therapy"": {""agents"": [{""drug_name"": ""rituximab"", ""intervals"": [{""start_date"": ""2020-08-25"", ""end_date"": ""2021-01-18"", ""start_date_rationale"": {""text"": ""R-CHOP Cycle 1 administered"", ""report_id"": ""R2002"", ""note_date"": ""2020-08-25"", ""author"": ""Dr. M. Patel""}, ""end_date_rationale"": {""text"": ""End of R-CHOP x6 cycles"", ""report_id"": ""R2004"", ""note_date"": ""2021-02-08"", ""author"": ""Dr. M. Patel""}}]}, {""drug_name"": ""cyclophosphamide"", ""intervals"": [{""start_date"": ""2020-08-25"", ""end_date"": ""2021-01-18"", ""start_date_rationale"": {""text"": ""R-CHOP Cycle 1"", ""report_id"": ""R2002"", ""note_date"": ""2020-08-25"", ""author"": ""Dr. M. Patel""}, ""end_date_rationale"": {""text"": ""End R-CHOP"", ""report_id"": ""R2004"", ""note_date"": ""2021-02-08"", ""author"": ""Dr. M. Patel""}}]}, {""drug_name"": ""doxorubicin"", ""intervals"": [{""start_date"": ""2020-08-25"", ""end_date"": ""2021-01-18"", ""start_date_rationale"": {""text"": ""Adriamycin R-CHOP Cycle 1"", ""report_id"": ""R2002"", ""note_date"": ""2020-08-25"", ""author"": ""Dr. M. Patel""}, ""end_date_rationale"": null}]}, {""drug_name"": ""lisocabtagene maraleucel"", ""intervals"": [{""start_date"": ""2021-08-10"", ""end_date"": null, ""start_date_rationale"": {""text"": ""Lisocabtagene maraleucel (Breyanzi) infusion Day 0"", ""report_id"": ""R2006"", ""note_date"": ""2021-08-10"", ""author"": ""Dr. M. Patel""}, ""end_date_rationale"": null}]}]}, ""progression"": {""progression_events"": [{""progression_date"": ""2021-02-08"", ""confidence_level"": ""high"", ""treatment_plan_at_time"": ""rituximab"", ""progression_date_rationale"": {""text"": ""Biopsy of mediastinal mass: VIABLE DLBCL \u2014 primary refractory disease confirmed. End-of-treatment PET after R-CHOP x6: Deauville score 5."", ""report_id"": ""R2004"", ""note_date"": ""2021-02-08"", ""author"": ""Dr. M. Patel""}}, {""progression_date"": ""2021-05-17"", ""confidence_level"": ""high"", ""treatment_plan_at_time"": ""rituximab"", ""progression_date_rationale"": {""text"": ""Post R-ICE x2 cycles \u2014 progressive disease. Deauville score 5 \u2014 progressive disease. Chemorefractory DLBCL."", ""report_id"": ""R2005"", ""note_date"": ""2021-05-17"", ""author"": ""Dr. M. Patel""}}]}, ""diagnosis"": ""DLBCL, GCB subtype, Stage IIIB"", ""molecular"": {""subtype"": ""GCB"", ""MYC"": ""rearranged"", ""BCL2"": ""negative"", ""BCL6"": ""negative"", ""Ki67"": ""90%""}}","========================================
+Note Number: 1
+Note Report ID: R2001
+Note Date: 2020-08-03
+Note Dept: Hematology/Oncology
+Note Author: Dr. M. Patel
+
+
+NEW PATIENT: Diffuse Large B-Cell Lymphoma (DLBCL), GCB subtype, newly diagnosed.
+
+HPI: Ms. Patricia Osei, 44F, presents with 2-month history of rapidly enlarging right axillary 
+mass, drenching night sweats, and 20-lb weight loss over 3 months (B symptoms present).
+PET/CT: Extensive disease — right axillary mass 7cm, bulky mediastinal adenopathy, multiple 
+bilateral axillary, inguinal, and para-aortic nodes. SUV max 24. No bone marrow involvement.
+Biopsy: DLBCL, germinal center B-cell (GCB) subtype. Ki-67 90%. BCL2/BCL6 rearrangements absent.
+MYC rearrangement detected — double-hit excluded (no BCL2 co-rearrangement).
+IPI score: 3 (high-intermediate). Stage IIIB.
+
+PLAN: Standard R-CHOP (rituximab, cyclophosphamide, doxorubicin, vincristine, prednisone) x 6 cycles.
+Discussed fertility preservation — patient deferred, does not wish to delay treatment.
+PCP prophylaxis with TMP-SMX started. G-CSF (filgrastim) support per protocol.
+Anti-viral prophylaxis with acyclovir initiated.
+
+========================================
 Note Number: 2
-Note Report ID: RPT102
-Note Date: 2022-02-20
-Note Dept: Neuro-Oncology
-Note Author: Dr. James Patel
+Note Report ID: R2002
+Note Date: 2020-08-25
+Note Dept: Hematology/Oncology
+Note Author: Dr. M. Patel
 
-Patient completed 6 cycles of PCV in November 2021. She is now in observation. MRI from 2022-02-15 is stable with no new enhancement. Continue surveillance imaging every 3 months.
 
-====================
+R-CHOP CYCLE 1 DAY 1 — TREATMENT NOTE
+
+Pre-medications: ondansetron 8mg IV, dexamethasone 12mg IV, diphenhydramine 25mg IV.
+
+RITUXIMAB (Rituxan) 375mg/m2 IV: Administered over 4.5 hours. BSA 1.72m2. Dose: 645mg.
+No infusion reaction. Tolerated well.
+
+CYCLOPHOSPHAMIDE (Cytoxan) 750mg/m2 IV: BSA 1.72m2. Dose: 1290mg. Mesna 400mg IV x3 given.
+DOXORUBICIN (Adriamycin) 50mg/m2 IV push: Dose: 86mg. EF >50% on pre-treatment echo.
+VINCRISTINE (Oncovin) 1.4mg/m2 IV (capped at 2mg): Dose: 2mg.
+PREDNISONE 100mg PO daily x5 days: Dispensed.
+
+Cumulative doxorubicin: 86mg (lifetime limit 550mg/m2 = 946mg for this patient).
+NEXT CYCLE: Day 22 (September 15, 2020).
+
+========================================
 Note Number: 3
-Note Report ID: RPT103
-Note Date: 2022-11-08
-Note Dept: Neuro-Oncology
-Note Author: Dr. James Patel
+Note Report ID: R2003
+Note Date: 2020-11-30
+Note Dept: Hematology/Oncology
+Note Author: Dr. M. Patel
 
-MRI from 2022-11-01 demonstrates new T1 enhancing lesion in the left temporal lobe measuring 1.5 cm, not present on prior imaging. Since completing PCV in November 2021, this new lesion is highly concerning for recurrence… the location corresponds to prior abnormality and has grown significantly. Patient presents with worsening headaches and new word-finding difficulty. Plan to initiate temozolomide.
 
-====================
+INTERIM PET AFTER R-CHOP CYCLE 4:
+Deauville score 4 — residual FDG-avid disease in mediastinum (SUV max 5.2, down from 24).
+Right axillary mass resolved. Most nodes resolved.
+
+ASSESSMENT: Partial metabolic response — not meeting complete response criteria after 4 cycles.
+CONCERN: Possible primary refractory disease or slow responder.
+
+OPTIONS:
+1. Complete 2 additional R-CHOP cycles (total 6) then reassess — may achieve complete response
+2. Escalate to R-EPOCH (dose-adjusted etoposide, prednisone, vincristine, cyclophosphamide, 
+   doxorubicin + rituximab) — more intensive regimen
+3. Transition to R-ICE (rituximab, ifosfamide, carboplatin, etoposide) salvage + ASCT if responsive
+
+PLAN: Complete cycles 5 and 6 of R-CHOP as planned. End-of-treatment PET will determine next steps.
+Hematology tumor board review scheduled.
+
+========================================
 Note Number: 4
-Note Report ID: RPT104
-Note Date: 2023-08-14
-Note Dept: Neuro-Oncology
-Note Author: Dr. James Patel
+Note Report ID: R2004
+Note Date: 2021-02-08
+Note Dept: Hematology/Oncology
+Note Author: Dr. M. Patel
 
-Patient has completed 12 cycles of temozolomide. MRI from 2023-08-10 shows significant increase in the left temporal enhancement now measuring 3.2 cm with new satellite lesions… clear radiographic progression on temozolomide. Patient has worsening aphasia. Referral to clinical trial.
-","{""systemic_therapy"": {""agents"": [{""drug_name"": ""PCV"", ""drug_name_rationale"": {""text"": ""PCV chemotherapy, cycle 1 of 6""}, ""intervals"": [{""start_date"": ""2021-05-12"", ""start_date_rationale"": {""text"": ""initiating PCV chemotherapy following radiation"", ""report_id"": ""RPT101""}, ""end_date"": ""2021-11-30"", ""end_date_rationale"": {""text"": ""Patient completed 6 cycles of PCV in November 2021"", ""report_id"": ""RPT102""}, ""end_date_type"": ""treatment_end""}]}, {""drug_name"": ""Temozolomide"", ""drug_name_rationale"": {""text"": ""Plan to initiate temozolomide""}, ""intervals"": [{""start_date"": ""2022-11-08"", ""start_date_rationale"": {""text"": ""Plan to initiate temozolomide"", ""report_id"": ""RPT103""}, ""end_date"": ""2023-08-14"", ""end_date_rationale"": {""text"": ""clear radiographic progression on temozolomide"", ""report_id"": ""RPT104""}, ""end_date_type"": ""treatment_end""}]}]}, ""progression"": {""progression_events"": [{""progression_date"": ""2022-11-01"", ""progression_date_rationale"": {""text"": ""new T1 enhancing lesion in the left temporal lobe measuring 1.5 cm, not present on prior imaging\u2026 highly concerning for recurrence"", ""report_id"": ""RPT103"", ""note_date"": ""2022-11-08"", ""author"": ""Dr. James Patel""}, ""treatment_plan_at_time"": ""PCV"", ""treatment_plan_at_time_rationale"": {""text"": ""Since completing PCV in November 2021""}, ""confidence_level"": ""high""}, {""progression_date"": ""2023-08-10"", ""progression_date_rationale"": {""text"": ""significant increase in the left temporal enhancement now measuring 3.2 cm with new satellite lesions\u2026 clear radiographic progression on temozolomide"", ""report_id"": ""RPT104"", ""note_date"": ""2023-08-14"", ""author"": ""Dr. James Patel""}, ""treatment_plan_at_time"": ""Temozolomide"", ""treatment_plan_at_time_rationale"": {""text"": ""clear radiographic progression on temozolomide""}, ""confidence_level"": ""high""}]}}"
-MRN000003,"Note Number: 1
-Note Report ID: RPT201
-Note Date: 2020-09-15
-Note Dept: Neuro-Oncology
-Note Author: Dr. Maria Lopez
 
-67-year-old male with grade 3 oligodendroglioma, IDH-mutant, 1p/19q codeleted, newly diagnosed after gross total resection in August 2020. He is starting adjuvant temozolomide chemotherapy. KPS 90. Baseline MRI post-op shows complete resection.
+END-OF-TREATMENT PET AFTER R-CHOP x6 CYCLES:
+Deauville score 5 — significant FDG-avid residual mediastinal mass (SUV max 8.1).
+Biopsy of mediastinal mass: VIABLE DLBCL — primary refractory disease confirmed.
 
-Plan: Adjuvant temozolomide 150 mg/m2 days 1-5 every 28 days for 12 cycles.
+ASSESSMENT: Primary refractory DLBCL. Will not proceed to ASCT without response to salvage.
 
-====================
+SALVAGE PLAN: R-ICE (rituximab 375mg/m2, ifosfamide 5g/m2, carboplatin AUC5, etoposide 100mg/m2 
+days 1-3) x2-3 cycles. If chemosensitive (CR/PR on PET), proceed to high-dose chemotherapy + ASCT.
+If refractory — evaluate for CAR-T cell therapy (axicabtagene ciloleucel [Yescarta] or 
+lisocabtagene maraleucel [Breyanzi]).
+
+PATIENT COUNSELING: Discussed poor prognosis with primary refractory DLBCL. Cure still possible 
+with salvage therapy + transplant. CAR-T discussed as option if salvage fails. Patient motivated.
+
+========================================
+Note Number: 5
+Note Report ID: R2005
+Note Date: 2021-05-17
+Note Dept: Hematology/Oncology
+Note Author: Dr. M. Patel
+
+
+POST R-ICE x2 CYCLES — PET REASSESSMENT:
+Deauville score 5 — progressive disease. SUV max 11.4 (increased from 8.1).
+New left inguinal adenopathy 3cm, new splenic lesion.
+ASSESSMENT: Chemorefractory DLBCL. Not eligible for ASCT.
+
+CAR-T EVALUATION: Patient referred to transplant/cellular therapy program.
+Eligible for axicabtagene ciloleucel (axi-cel, Yescarta) or lisocabtagene maraleucel (liso-cel, Breyanzi).
+Selected liso-cel given favorable toxicity profile.
+BRIDGING THERAPY: Polatuzumab vedotin (Polivy) + bendamustine + rituximab (pola-BR) x1-2 cycles 
+while awaiting liso-cel manufacturing (estimated 4-6 weeks).
+
+LYMPHODEPLETION PLAN: Fludarabine 30mg/m2/day + cyclophosphamide 300mg/m2/day x3 days
+then liso-cel infusion Day 0.
+
+========================================
+Note Number: 6
+Note Report ID: R2006
+Note Date: 2021-08-10
+Note Dept: Hematology/Oncology
+Note Author: Dr. M. Patel
+
+
+LISO-CEL INFUSION — DAY 0
+
+Patient admitted to inpatient unit for CAR-T administration.
+Lymphodepletion completed: fludarabine + cyclophosphamide completed 2021-08-07 through 2021-08-09.
+
+LISOCABTAGENE MARALEUCEL (Breyanzi) INFUSION: 
+CD8+ CAR-T dose: 50 x10^6 cells
+CD19+ CAR-T dose: 50 x10^6 cells  
+Total: 100 x10^6 CAR-T cells, infused over 30 minutes without reaction.
+
+CRS MONITORING: Tocilizumab (Actemra) 8mg/kg available at bedside.
+Corticosteroids available if needed for ICANS (immune effector cell-associated neurotoxicity syndrome).
+ICANS assessment tools in place (CARTOX-10 scoring).
+
+Day +1: Mild fever 38.2°C. CRS Grade 1. Monitoring closely.
+Day +3: Persistent fever 39.1°C, hypotension responding to IV fluids. CRS Grade 2.
+Tocilizumab 8mg/kg IV administered — rapid defervescence over 12 hours.
+Day +5: Afebrile. Hemodynamically stable. No ICANS. CRS resolved.
+Day +10: CBC improving. Ferritin trending down from peak 8400 to 3200.
+DISCHARGE: Day +12. Patient discharged in stable condition.
+"
+D000003,"{""systemic_therapy"": {""agents"": [{""drug_name"": ""palbociclib"", ""intervals"": [{""start_date"": ""2019-05-20"", ""end_date"": ""2020-09-14"", ""start_date_rationale"": {""text"": ""plan to initiate palbociclib (Ibrance) 125mg daily"", ""report_id"": ""R3001"", ""note_date"": ""2019-05-20"", ""author"": ""Dr. S. Rivera""}, ""end_date_rationale"": {""text"": ""Progression on palbociclib + letrozole. Transition to abemaciclib + fulvestrant."", ""report_id"": ""R3003"", ""note_date"": ""2020-09-14"", ""author"": ""Dr. S. Rivera""}}]}, {""drug_name"": ""letrozole"", ""intervals"": [{""start_date"": ""2019-05-20"", ""end_date"": ""2020-09-14"", ""start_date_rationale"": {""text"": ""letrozole 2.5mg daily with palbociclib"", ""report_id"": ""R3001"", ""note_date"": ""2019-05-20"", ""author"": ""Dr. S. Rivera""}, ""end_date_rationale"": {""text"": ""Transition to fulvestrant"", ""report_id"": ""R3003"", ""note_date"": ""2020-09-14"", ""author"": ""Dr. S. Rivera""}}]}, {""drug_name"": ""abemaciclib"", ""intervals"": [{""start_date"": ""2020-09-14"", ""end_date"": ""2022-03-07"", ""start_date_rationale"": {""text"": ""Transition to abemaciclib 150mg BID + fulvestrant"", ""report_id"": ""R3003"", ""note_date"": ""2020-09-14"", ""author"": ""Dr. S. Rivera""}, ""end_date_rationale"": {""text"": ""Progressive disease on abemaciclib + fulvestrant"", ""report_id"": ""R3005"", ""note_date"": ""2022-03-07"", ""author"": ""Dr. S. Rivera""}}]}, {""drug_name"": ""fulvestrant"", ""intervals"": [{""start_date"": ""2020-09-14"", ""end_date"": ""2022-03-07"", ""start_date_rationale"": {""text"": ""fulvestrant 500mg IM (MONARCH-2 data)"", ""report_id"": ""R3003"", ""note_date"": ""2020-09-14"", ""author"": ""Dr. S. Rivera""}, ""end_date_rationale"": {""text"": ""Progression \u2014 transitioning to everolimus + exemestane"", ""report_id"": ""R3005"", ""note_date"": ""2022-03-07"", ""author"": ""Dr. S. Rivera""}}]}, {""drug_name"": ""everolimus"", ""intervals"": [{""start_date"": ""2022-03-07"", ""end_date"": null, ""start_date_rationale"": {""text"": ""Transition to everolimus (Afinitor) 10mg daily + exemestane"", ""report_id"": ""R3005"", ""note_date"": ""2022-03-07"", ""author"": ""Dr. S. Rivera""}, ""end_date_rationale"": null}]}, {""drug_name"": ""exemestane"", ""intervals"": [{""start_date"": ""2022-03-07"", ""end_date"": null, ""start_date_rationale"": {""text"": ""everolimus + exemestane (Aromasin) 25mg daily"", ""report_id"": ""R3005"", ""note_date"": ""2022-03-07"", ""author"": ""Dr. S. Rivera""}, ""end_date_rationale"": null}]}]}, ""progression"": {""progression_events"": [{""progression_date"": ""2020-09-14"", ""confidence_level"": ""high"", ""treatment_plan_at_time"": ""palbociclib"", ""progression_date_rationale"": {""text"": ""CT 2020-09-08: New hepatic lesion, increase in bone lesions. Progression on palbociclib + letrozole. ESR1 Y537S detected."", ""report_id"": ""R3003"", ""note_date"": ""2020-09-14"", ""author"": ""Dr. S. Rivera""}}, {""progression_date"": ""2022-03-07"", ""confidence_level"": ""high"", ""treatment_plan_at_time"": ""abemaciclib"", ""progression_date_rationale"": {""text"": ""CT 2022-03-02: Hepatic lesion 2.8cm (from 1.1cm). New right femoral neck lesion with cortical breakthrough. Progressive disease on abemaciclib + fulvestrant."", ""report_id"": ""R3005"", ""note_date"": ""2022-03-07"", ""author"": ""Dr. S. Rivera""}}]}, ""diagnosis"": ""HR+/HER2- metastatic breast cancer"", ""molecular"": {""ER"": ""95%"", ""PR"": ""60%"", ""HER2"": ""negative (IHC 1+, FISH non-amp)"", ""ESR1"": ""Y537S + D538G"", ""PIK3CA"": ""wild-type"", ""Ki67"": ""18%""}}","========================================
+Note Number: 1
+Note Report ID: R3001
+Note Date: 2019-05-20
+Note Dept: Medical Oncology
+Note Author: Dr. S. Rivera
+
+
+CONSULTATION: Newly diagnosed metastatic breast cancer.
+
+PATIENT: Ms. Linda Kowalski, 62F. History of ER+/PR+/HER2- right breast cancer treated with
+lumpectomy + radiation + adjuvant anastrozole in 2014. Now presents with new bone pain x6 weeks.
+
+WORKUP:
+- CT chest/abdomen/pelvis: Multiple lytic bone lesions (vertebral bodies T7, L2, L4, right iliac),
+  no visceral metastases. No liver or lung involvement.
+- Bone scan: Diffuse osseous uptake consistent with widespread bone metastases.  
+- Biopsy of right iliac lesion: ER 95%/PR 60%/HER2 IHC 1+ (FISH non-amplified). Ki-67 18%.
+- Repeat ER/PR/HER2 consistent with primary. No change in receptor status.
+- ESR1 mutation: Not detected on liquid biopsy.
+
+ASSESSMENT: HR+/HER2- metastatic breast cancer (MBC), bone-only disease, de novo metastatic 
+(recurrence >4 years from adjuvant AI). Favorable biology, no visceral crisis.
+
+TREATMENT PLAN:
+First-line therapy: Palbociclib (Ibrance) 125mg daily x21 days/28-day cycle + letrozole 2.5mg daily.
+Rationale: PALOMA-2 data supports palbociclib + letrozole as standard first-line for HR+/HER2- MBC.
+Bone support: Zoledronic acid (Zometa) 4mg IV q4 weeks — dental clearance required first.
+Ovarian function: Post-menopausal confirmed (FSH/LH elevated).
+
+Side effects discussed: neutropenia (most common — grade 3/4 in ~66% of patients but rarely febrile),
+fatigue, alopecia (rare), nausea. CBC monitoring required weeks 2 of cycle 1, then before each cycle.
+Patient motivated and understands treatment plan. Return in 4 weeks.
+
+========================================
 Note Number: 2
-Note Report ID: RPT202
-Note Date: 2021-10-20
-Note Dept: Neuro-Oncology
-Note Author: Dr. Maria Lopez
+Note Report ID: R3002
+Note Date: 2019-06-17
+Note Dept: Medical Oncology
+Note Author: Dr. S. Rivera
 
-Patient has completed 12 cycles of adjuvant temozolomide in September 2021. He is now under surveillance. MRI from 2021-10-15 shows no enhancing disease. FLAIR signal is stable. Continue quarterly surveillance.
 
-====================
+FOLLOW-UP: Palbociclib cycle 1 completed.
+
+TOXICITY: ANC nadir 0.8 (Grade 3 neutropenia) on day 15 CBC. Afebrile throughout. No infections.
+Per protocol: Reduce palbociclib to 100mg daily for cycle 2. Letrozole continued at 2.5mg daily.
+Patient tolerated cycle well otherwise — mild fatigue (grade 1), no nausea, no alopecia.
+Bone pain slightly improved — starting zoledronic acid today (dental clearance obtained).
+
+ZOLEDRONIC ACID 4mg IV infused over 15 minutes. Pre-hydration given. Acetaminophen for flu-like sx.
+Serum calcium, creatinine, phosphorus — all within normal limits. No osteonecrosis of jaw concerns.
+
+PLAN: Palbociclib 100mg cycle 2, letrozole continue. Zometa monthly. CBC week 2. Return in 4 weeks.
+
+========================================
 Note Number: 3
-Note Report ID: RPT203
-Note Date: 2022-09-06
-Note Dept: Neuro-Oncology
-Note Author: Dr. Maria Lopez
+Note Report ID: R3003
+Note Date: 2020-09-14
+Note Dept: Medical Oncology
+Note Author: Dr. S. Rivera
 
-MRI from 2022-09-01 reveals a new 1.8 cm area of nodular FLAIR hyperintensity with faint peripheral enhancement in the left frontal lobe. Since completing temozolomide in September 2021, this represents new radiographic activity… the enhancement pattern is suspicious for early recurrence. Patient reports new mild cognitive slowing. Plan to re-biopsy and initiate lomustine.
 
-====================
+DISEASE ASSESSMENT: 16 months on palbociclib + letrozole.
+
+CT CHEST/ABDOMEN/PELVIS (2020-09-08): PROGRESSION.
+- New 1.4cm hepatic lesion, segment VI (new visceral involvement).
+- Increase in size of known bone lesions (T7 vertebral body now 2.1cm from 1.4cm).
+- New small bilateral pulmonary nodules (3mm-5mm, non-specific but concerning).
+
+BONE SCAN: Increased uptake at multiple sites vs prior scan. New sternal lesion.
+
+ASSESSMENT: Progression on palbociclib + letrozole. First progression at 16 months (PFS consistent 
+with PALOMA-2 median). ESR1 mutation now detected on liquid biopsy (Y537S, allele fraction 3.2%).
+
+SECOND-LINE PLAN: 
+Given ESR1 mutation: elacestrant (Orserdu) OR fulvestrant + new CDK4/6 inhibitor.
+Alternative: abemaciclib (Verzenio) + fulvestrant (Faslodex 500mg IM q28d).
+Decision: Transition to abemaciclib 150mg BID + fulvestrant 500mg IM (MONARCH-2 data).
+Also: continue zoledronic acid monthly for bone disease.
+
+Diarrhea is most common toxicity of abemaciclib (>50%) — loperamide prescription provided.
+Patient counseled on VTE risk with abemaciclib. Discussed anti-coagulation monitoring.
+
+========================================
 Note Number: 4
-Note Report ID: RPT204
-Note Date: 2023-05-11
-Note Dept: Neuro-Oncology
-Note Author: Dr. Maria Lopez
+Note Report ID: R3004
+Note Date: 2021-06-21
+Note Dept: Medical Oncology
+Note Author: Dr. S. Rivera
 
-Re-biopsy confirmed recurrent oligodendroglioma. Patient has completed 4 cycles of lomustine 110 mg/m2 every 6 weeks. MRI from 2023-05-08 shows significant enlargement of the left frontal lesion now 4.5 cm with surrounding edema and new leptomeningeal enhancement… progressive disease on lomustine. Patient has significant worsening of cognitive function. Best supportive care discussed.
-","{""systemic_therapy"": {""agents"": [{""drug_name"": ""Temozolomide"", ""drug_name_rationale"": {""text"": ""starting adjuvant temozolomide chemotherapy""}, ""intervals"": [{""start_date"": ""2020-09-15"", ""start_date_rationale"": {""text"": ""starting adjuvant temozolomide chemotherapy"", ""report_id"": ""RPT201""}, ""end_date"": ""2021-09-30"", ""end_date_rationale"": {""text"": ""Patient has completed 12 cycles of adjuvant temozolomide in September 2021"", ""report_id"": ""RPT202""}, ""end_date_type"": ""treatment_end""}]}, {""drug_name"": ""Lomustine"", ""drug_name_rationale"": {""text"": ""Plan to re-biopsy and initiate lomustine""}, ""intervals"": [{""start_date"": ""2022-09-06"", ""start_date_rationale"": {""text"": ""Plan to re-biopsy and initiate lomustine"", ""report_id"": ""RPT203""}, ""end_date"": ""2023-05-11"", ""end_date_rationale"": {""text"": ""progressive disease on lomustine. Patient has significant worsening"", ""report_id"": ""RPT204""}, ""end_date_type"": ""treatment_end""}]}]}, ""progression"": {""progression_events"": [{""progression_date"": ""2022-09-01"", ""progression_date_rationale"": {""text"": ""new 1.8 cm area of nodular FLAIR hyperintensity with faint peripheral enhancement in the left frontal lobe\u2026 suspicious for early recurrence"", ""report_id"": ""RPT203"", ""note_date"": ""2022-09-06"", ""author"": ""Dr. Maria Lopez""}, ""treatment_plan_at_time"": ""Temozolomide"", ""treatment_plan_at_time_rationale"": {""text"": ""Since completing temozolomide in September 2021""}, ""confidence_level"": ""medium""}, {""progression_date"": ""2023-05-08"", ""progression_date_rationale"": {""text"": ""significant enlargement of the left frontal lesion now 4.5 cm with surrounding edema and new leptomeningeal enhancement\u2026 progressive disease on lomustine"", ""report_id"": ""RPT204"", ""note_date"": ""2023-05-11"", ""author"": ""Dr. Maria Lopez""}, ""treatment_plan_at_time"": ""Lomustine"", ""treatment_plan_at_time_rationale"": {""text"": ""progressive disease on lomustine""}, ""confidence_level"": ""high""}]}}"
+
+FOLLOW-UP: 9 months on abemaciclib + fulvestrant.
+
+CT CHEST/ABDOMEN/PELVIS (2021-06-15): Stable disease.
+- Hepatic lesion segment VI: 1.1cm (slight decrease from 1.4cm, stable).
+- Bone lesions: stable or minor improvement. T7: 1.9cm (down from 2.1cm).
+- Pulmonary nodules: stable, not enlarging, still non-specific.
+
+PATIENT SYMPTOMS: Grade 2 diarrhea — managed with loperamide, diet modification. Dose reduction
+to abemaciclib 100mg BID considered but patient declined, managing well with supportive care.
+Fatigue grade 1. No VTE. CA 15-3 trending down: 182 → 94 U/mL.
+
+PLAN: Continue abemaciclib 150mg BID + fulvestrant. Next CT in 4 months. Zometa monthly ongoing.
+Patient very satisfied with response. Tolerating treatment well overall.
+
+========================================
+Note Number: 5
+Note Report ID: R3005
+Note Date: 2022-03-07
+Note Dept: Medical Oncology
+Note Author: Dr. S. Rivera
+
+
+URGENT: SUSPECTED PROGRESSION.
+
+Patient reports new right hip pain for 3 weeks. Difficulty weight-bearing. 
+X-ray right hip: Lytic lesion right femoral neck — pathologic fracture RISK.
+Orthopedic surgery consulted: prophylactic intramedullary nailing recommended.
+
+CT CHEST/ABDOMEN/PELVIS (2022-03-02): PROGRESSION.
+- Hepatic lesion: now 2.8cm (from 1.1cm). Two additional new hepatic lesions (0.6cm, 0.9cm).
+- New right femoral neck lesion 3.1cm with cortical breakthrough.
+- Known bone lesions all larger. New lesion left acetabulum.
+- Pulmonary nodules: largest now 8mm, suspicious.
+
+ASSESSMENT: Progressive disease on abemaciclib + fulvestrant (PFS ~18 months).
+ESR1 mutation Y537S allele fraction now 12% (increased). D538G variant also detected.
+
+THIRD-LINE OPTIONS DISCUSSED:
+1. Elacestrant (Orserdu) 345mg daily — EMERALD trial data, ESR1-mutant specific benefit
+2. Everolimus (Afinitor) 10mg daily + exemestane (Aromasin) 25mg daily — BOLERO-2 data
+3. Sacituzumab govitecan (Trodelvy) — approved for HR+ MBC after 2+ prior lines
+4. Alpelisib (Piqray) — PIK3CA not mutated on current liquid biopsy, so not preferred
+5. Clinical trial enrollment
+
+PLAN: Transition to everolimus + exemestane (given rapid progression and visceral disease).
+Orthopedic surgery scheduled for prophylactic nailing. Hold systemic therapy 2 weeks peri-op.
+Bone support: Switch zoledronic acid to denosumab (Xgeva) 120mg SQ monthly — better fracture 
+prevention data in setting of multiple high-risk lesions.
+
+Hyperglycemia, mucositis, and pneumonitis are main everolimus toxicities — counseled extensively.
+Fasting glucose baseline obtained. Dental evaluation for denosumab. 
+
+========================================
+Note Number: 6
+Note Report ID: R3006
+Note Date: 2022-05-16
+Note Dept: Medical Oncology
+Note Author: Dr. S. Rivera
+
+
+FOLLOW-UP: 10 weeks on everolimus + exemestane.
+
+POST-OP: Prophylactic intramedullary nailing right femur completed 2022-03-21. Uncomplicated.
+Patient weight-bearing with physical therapy assistance. Pain well-controlled.
+
+CT CHEST/ABDOMEN/PELVIS (2022-05-10): MIXED RESPONSE.
+- Hepatic lesions: segment VI lesion 2.1cm (down from 2.8cm). Smaller lesions stable.
+- Lung nodules: largest now 9mm (marginally larger — monitoring).
+- Bone: Overall stable. Right femoral lesion post-surgical changes.
+
+TOXICITY: Grade 2 mucositis — oral cryotherapy and magic mouthwash prescribed. Dose reduction of
+everolimus to 5mg daily. Fasting glucose 142mg/dL — metformin started for everolimus-induced 
+hyperglycemia. No pneumonitis symptoms; chest CT no ground-glass opacities. Fatigue grade 1-2.
+
+CA 15-3: 412 → 280 U/mL (declining — early response signal).
+Denosumab (Xgeva) 120mg SQ administered today. Next dose in 4 weeks.
+Calcium + vitamin D supplementation continued.
+
+PLAN: Continue everolimus 5mg daily + exemestane. Monitor mucositis. Reimage in 10 weeks.
+If progression confirmed: sacituzumab govitecan or clinical trial.
+"

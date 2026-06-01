@@ -8,16 +8,26 @@ from datetime import datetime
 import pandas as pd
 from nicegui import ui
 
-from project import (
-    load_global_config, save_global_config,
-    create_project, open_project, load_extraction_into_project,
-    get_project_annotations_db_path, get_project_exports_dir,
-    get_project_checkpoints_dir, do_checkpoint, open_annotations_db,
-    migrate_legacy_folder, ProjectError,
-    get_recent_projects, record_recent_project,
-)
-
-# Tool name: WATNEY
+try:
+    from watney.project import (
+        load_global_config, save_global_config,
+        create_project, open_project, load_extraction_into_project,
+        get_project_annotations_db_path, get_project_exports_dir,
+        get_project_checkpoints_dir, do_checkpoint, open_annotations_db,
+        migrate_legacy_folder, ProjectError,
+        get_recent_projects, record_recent_project,
+    )
+    from watney.drug_dict import DRUG_DICT_JS
+except ImportError:
+    from project import (
+        load_global_config, save_global_config,
+        create_project, open_project, load_extraction_into_project,
+        get_project_annotations_db_path, get_project_exports_dir,
+        get_project_checkpoints_dir, do_checkpoint, open_annotations_db,
+        migrate_legacy_folder, ProjectError,
+        get_recent_projects, record_recent_project,
+    )
+    from drug_dict import DRUG_DICT_JS
 
 # =============================================================================
 # CONFIG
@@ -109,7 +119,7 @@ def _bootstrap_legacy_db():
         agent_end TEXT, agent_end_source TEXT,
         exclusion_flag TEXT, exclusion_reason TEXT, extraction_version TEXT,
         deleted INTEGER DEFAULT 0, deletion_reason TEXT, deletion_timestamp TEXT,
-        import_source TEXT)""")
+        import_source TEXT, unexclusion_reason TEXT)""")
     c.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_progression_event
         ON annotations (DFCI_MRN, progression_date, progression_source, report_id)""")
     for _col, _typ in [
@@ -118,7 +128,7 @@ def _bootstrap_legacy_db():
         ('exclusion_flag','TEXT'),('exclusion_reason','TEXT'),
         ('extraction_version','TEXT'),
         ('deleted','INTEGER'),('deletion_reason','TEXT'),('deletion_timestamp','TEXT'),
-        ('import_source','TEXT'),
+        ('import_source','TEXT'),('unexclusion_reason','TEXT'),
     ]:
         try: c.execute(f'ALTER TABLE annotations ADD COLUMN {_col} {_typ}')
         except sqlite3.OperationalError: pass
@@ -467,8 +477,6 @@ def build_notes_html(notes, highlighted_report=None, evidence_text=None):
             <pre>{rendered}</pre>
         </div>""")
     return '\n'.join(parts)
-
-from drug_dict import DRUG_DICT_JS
 
 
 # =============================================================================
@@ -2398,7 +2406,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         try:
             _cr = _db().cursor()
             _cr.execute("""
-                SELECT exclusion_flag, exclusion_reason FROM annotations
+                SELECT exclusion_flag, exclusion_reason, unexclusion_reason FROM annotations
                 WHERE DFCI_MRN=? AND exclusion_flag IS NOT NULL LIMIT 1
             """, (str(patient_id).strip(),))
             return _cr.fetchone()
@@ -2430,12 +2438,15 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 DELETE FROM annotations
                 WHERE DFCI_MRN=? AND progression_source='exclusion_placeholder'
             """, (pid,))
-            # Clear exclusion_flag and exclusion_reason to NULL on all real rows
+            # Clear exclusion fields and record the un-exclusion reason + who/when
             _cr.execute("""
                 UPDATE annotations
-                SET exclusion_flag=NULL, exclusion_reason=NULL
+                SET exclusion_flag=NULL, exclusion_reason=NULL,
+                    unexclusion_reason=?,
+                    user=COALESCE(user, ?),
+                    modification_timestamp=?
                 WHERE DFCI_MRN=?
-            """, (pid,))
+            """, (reason, CURRENT_USER, datetime.now().isoformat(timespec='seconds'), pid))
         _db().commit()
         if not _demo_mode[0]:
             refresh_annotations_df()
@@ -2449,9 +2460,13 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.label(action_label).classes('text-base font-bold')
             if currently_excluded:
                 ui.label('This patient is currently excluded. Remove the exclusion?').classes('text-sm text-gray-600')
+                _excl_row = _get_exclusion(patient_id)
+                if _excl_row and _excl_row['exclusion_reason']:
+                    ui.label(f'Original reason: {_excl_row["exclusion_reason"]}').classes('text-xs text-gray-400 italic mt-1')
             else:
                 ui.label('Are you sure you want to exclude this patient?').classes('text-sm text-gray-600')
-            reason_input = ui.textarea(label='Reason (required)').classes('w-full mt-2')
+            _reason_label = 'Un-exclusion reason (required)' if currently_excluded else 'Exclusion reason (required)'
+            reason_input = ui.textarea(label=_reason_label).classes('w-full mt-2')
             reason_input.props('outlined dense')
             err_label = ui.label('').classes('text-xs text-red-500')
             status_label = ui.label('').classes('text-sm font-semibold mt-1')

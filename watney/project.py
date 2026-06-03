@@ -158,12 +158,30 @@ def _open_patients_db(project_dir: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("""
         CREATE TABLE IF NOT EXISTS patients (
-            DFCI_MRN    TEXT PRIMARY KEY,
-            date_added  TEXT NOT NULL,
-            active      INTEGER DEFAULT 1,
-            cohort_notes TEXT
+            DFCI_MRN           TEXT PRIMARY KEY,
+            date_added         TEXT NOT NULL,
+            active             INTEGER DEFAULT 1,
+            cohort_notes       TEXT,
+            exclusion_flag     TEXT,
+            exclusion_reason   TEXT,
+            excluded_by        TEXT,
+            excluded_at        TEXT,
+            unexclusion_reason TEXT,
+            unexcluded_by      TEXT,
+            unexcluded_at      TEXT
         )
     """)
+    # Migration: add columns to existing patients.db if absent
+    for _col, _typ in [
+        ('exclusion_flag','TEXT'), ('exclusion_reason','TEXT'),
+        ('excluded_by','TEXT'),    ('excluded_at','TEXT'),
+        ('unexclusion_reason','TEXT'), ('unexcluded_by','TEXT'),
+        ('unexcluded_at','TEXT'),
+    ]:
+        try:
+            conn.execute(f'ALTER TABLE patients ADD COLUMN {_col} {_typ}')
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     return conn
 
@@ -188,6 +206,11 @@ def _populate_patients_db(project_dir: Path, df: 'pd.DataFrame'):
     conn.commit()
     conn.close()
     return added
+
+
+def open_patients_db(project_dir: Path) -> sqlite3.Connection:
+    """Public — opens patients.db with full schema including exclusion columns."""
+    return _open_patients_db(project_dir)
 
 
 # =============================================================================
@@ -216,7 +239,8 @@ CREATE TABLE IF NOT EXISTS annotations (
     deleted              INTEGER DEFAULT 0,
     deletion_reason      TEXT,
     deletion_timestamp   TEXT,
-    import_source        TEXT
+    import_source        TEXT,
+    unexclusion_reason   TEXT
 )
 """
 
@@ -238,6 +262,7 @@ _ANNOTATIONS_OPTIONAL_COLS = [
     ('deletion_reason',    'TEXT'),
     ('deletion_timestamp', 'TEXT'),
     ('import_source',      'TEXT'),
+    ('unexclusion_reason', 'TEXT'),
 ]
 
 

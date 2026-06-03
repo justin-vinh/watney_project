@@ -1,3 +1,15 @@
+"""
+watney_v6.py - WATNEY oncology annotation platform.
+
+WATNEY (Workflow for Annotating Therapeutics and Noting Events in oncologY) is a
+NiceGUI-based human-in-the-loop review tool for LLM-extracted oncology progression
+events. Annotators review extraction cards, assign agents to progression dates, add
+clinician-entered events, exclude patients, and export a structured CSV.
+
+Entry point: main() at the bottom of this module.
+Run with:    python watney_v6.py
+"""
+
 import re
 import json
 import html
@@ -8,6 +20,7 @@ from datetime import datetime
 import pandas as pd
 from nicegui import ui
 
+# Support both installed-package imports (watney.project) and local dev imports.
 try:
     from watney.project import (
         load_global_config, save_global_config,
@@ -15,7 +28,7 @@ try:
         get_project_annotations_db_path, get_project_exports_dir,
         get_project_checkpoints_dir, do_checkpoint, open_annotations_db,
         migrate_legacy_folder, ProjectError,
-        get_recent_projects, record_recent_project,
+        get_recent_projects, record_recent_project, open_patients_db,
     )
     from watney.drug_dict import DRUG_DICT_JS
 except ImportError:
@@ -25,7 +38,7 @@ except ImportError:
         get_project_annotations_db_path, get_project_exports_dir,
         get_project_checkpoints_dir, do_checkpoint, open_annotations_db,
         migrate_legacy_folder, ProjectError,
-        get_recent_projects, record_recent_project,
+        get_recent_projects, record_recent_project, open_patients_db,
     )
     from drug_dict import DRUG_DICT_JS
 
@@ -46,6 +59,7 @@ def _major_version(v):
     except Exception:
         return str(v)
 
+# Expected column names in the input extraction CSV.
 NOTES_COL = 'all_notes'
 GENERATION_COL = 'generation'
 PATIENT_ID_COL = 'DFCI_MRN'
@@ -59,15 +73,21 @@ ANNOTATION_OUTPUT_DIR = Path('./watney_annotations')
 SQLITE_PATH = ANNOTATION_OUTPUT_DIR / 'watney_annotations_database.db'
 CONFIG_PATH = ANNOTATION_OUTPUT_DIR / 'watney_config.json'
 
+# Active extraction CSV path; updated when a project is opened or extraction is switched.
 EXTRACTION_CSV_PATH = None
+# Username set at login; tags every annotation row written to the database.
 CURRENT_USER = None
+# When True the login overlay is shown and annotation actions are blocked.
 UI_LOCKED = True
+# NiceGUI element references kept at module scope so logout can reset them.
 user_label = None
 nav_bar = None
+# In-memory DataFrame of the active extraction CSV.
 df = None
+# Default note body font size in pixels; overridden by global config.
 NOTE_FONT_SIZE = 11
 
-# Global update state
+# Mutable flags updated by the background version check on page load.
 _UPDATE_AVAILABLE = [False]
 _LATEST_VERSION   = [None]
 
@@ -94,7 +114,8 @@ if _cfg.get('note_font_size'):
 # LOAD DATA
 # =============================================================================
 
-def load_dataframe(path: str):
+def load_dataframe(path: str) -> pd.DataFrame:
+    """Read an extraction CSV, preserving MRN column as string to avoid float coercion."""
     return pd.read_csv(path, dtype={PATIENT_ID_COL: str})
 
 # =============================================================================
@@ -105,7 +126,13 @@ def load_dataframe(path: str):
 # =============================================================================
 
 def _bootstrap_legacy_db():
-    """Open (or create) the legacy annotations DB for pre-login safety."""
+    """Open (or create) the legacy annotations DB for pre-login safety.
+
+    Creates the watney_annotations/ folder and a minimal SQLite database so
+    module-level helpers do not crash before the user logs in and opens a
+    project. Once a project is opened, _open_project_db() replaces this
+    connection with the project's own annotations.db.
+    """
     ANNOTATION_OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
     c = sqlite3.connect(str(SQLITE_PATH), check_same_thread=False)
     c.row_factory = sqlite3.Row
@@ -138,7 +165,11 @@ def _bootstrap_legacy_db():
 conn, cursor = _bootstrap_legacy_db()
 
 def _open_project_db(project_dir: Path):
-    """Switch conn/cursor to the project's annotations.db."""
+    """Replace the module-level conn/cursor with the project's annotations.db.
+
+    Called once when a project is opened so all subsequent DB helpers use the
+    correct project database rather than the legacy bootstrap path.
+    """
     global conn, cursor
     try: conn.close()
     except Exception: pass
@@ -150,7 +181,12 @@ def _open_project_db(project_dir: Path):
 # =============================================================================
 
 def load_annotations_df(include_deleted: bool = False) -> pd.DataFrame:
-    """Load annotations. By default filters out soft-deleted rows."""
+    """Return the annotations table as a DataFrame.
+
+    Args:
+        include_deleted: When False (default) rows with deleted=1 are excluded.
+            Pass True only for admin or audit purposes.
+    """
     if include_deleted:
         return pd.read_sql_query("SELECT * FROM annotations", conn)
     return pd.read_sql_query(
@@ -163,7 +199,12 @@ annotations_df = load_annotations_df()
 # PROJECT OPEN HELPER  (called from login flow inside build_page)
 # ─────────────────────────────────────────────────────────────────────────────
 def _apply_opened_project(meta: dict, project_df, project_conn, project_dir: Path):
-    """Update module-level state after a project is opened or created."""
+    """Atomically update all module-level state when a project is opened.
+
+    Sets CURRENT_PROJECT, PROJECT_DIR, df, conn, cursor, annotations_df, and
+    EXTRACTION_CSV_PATH from the newly opened project, then records the project
+    path in the global recent-projects list.
+    """
     global CURRENT_PROJECT, PROJECT_DIR, df, conn, cursor, annotations_df
     global EXTRACTION_CSV_PATH
     CURRENT_PROJECT = meta
@@ -177,21 +218,25 @@ def _apply_opened_project(meta: dict, project_df, project_conn, project_dir: Pat
     # Persist last_project + recents in global config
     record_recent_project(project_dir, meta.get('project_name', project_dir.name))
 
-def require_user():
+def require_user() -> bool:
+    """Guard used by annotation write functions; notifies and returns False if no user is set."""
     if not CURRENT_USER:
         ui.notify('Enter username first', color='red')
         return False
     return True
 
 def refresh_annotations_df():
+    """Reload annotations_df from the database, discarding any cached state."""
     global annotations_df
     annotations_df = load_annotations_df()
 
 def save_annotations():
+    """Commit the current transaction and refresh the in-memory annotations cache."""
     conn.commit()
     refresh_annotations_df()
 
-def safe_str(x):
+def safe_str(x) -> str:
+    """Coerce any value to a stripped string, returning '' for NaN/None/bytes."""
     if pd.isna(x):
         return ''
     try:
@@ -201,7 +246,12 @@ def safe_str(x):
     except:
         return ''
 
-def normalize_patient_id(x):
+def normalize_patient_id(x) -> str:
+    """Normalise an MRN value to a clean string.
+
+    Strips trailing '.0' artifacts introduced when pandas reads integer IDs
+    from a CSV into a float column before string conversion.
+    """
     if pd.isna(x):
         return ''
     s = str(x).strip()
@@ -209,7 +259,14 @@ def normalize_patient_id(x):
         s = s[:-2]
     return s
 
-def upsert_annotation(new_row):
+def upsert_annotation(new_row: dict):
+    """Insert or update a single annotation row.
+
+    Matches on (DFCI_MRN, report_id, progression_date, progression_source).
+    On update, agent/evidence/interval fields are overwritten; extraction_version
+    is set only if not already populated (COALESCE guard).
+    On insert, inherits any existing exclusion_flag for the patient.
+    """
     cursor.execute("""
     SELECT id FROM annotations
     WHERE DFCI_MRN=? AND report_id=? AND progression_date=? AND progression_source=?
@@ -258,10 +315,11 @@ def upsert_annotation(new_row):
         ))
     save_annotations()
 
-def save_agent_assignment(rid, agent_value, patient_id,
+def save_agent_assignment(rid: str, agent_value: str, patient_id: str,
                           progression_date=None, evidence=None,
                           agent_start=None, agent_start_source=None,
                           agent_end=None, agent_end_source=None):
+    """Persist an LLM-sourced agent assignment for a progression event."""
     if not require_user(): return
     if not agent_value:
         ui.notify('No agent selected', color='red')
@@ -278,7 +336,9 @@ def save_agent_assignment(rid, agent_value, patient_id,
     })
     ui.notify(f'Saved: {agent_value}', color='green')
 
-def save_clinician_progression_event(patient_id, progression_date, agent, evidence,
+def save_clinician_progression_event(
+        patient_id: str, progression_date: str, agent: str, evidence: str,
+        # Annotator-entered progression event not derived from the LLM extraction.
                                      report_id, determined_by,
                                      agent_start=None, agent_start_source=None,
                                      agent_end=None, agent_end_source=None):
@@ -295,14 +355,20 @@ def save_clinician_progression_event(patient_id, progression_date, agent, eviden
     })
     ui.notify('Clinician event saved', color='green')
 
-def get_saved_annotation(patient_id, report_id, progression_date):
+def get_saved_annotation(patient_id: str, report_id: str, progression_date: str):
+    """Fetch the saved agent assignment for a given progression event, or None."""
     cursor.execute("""
     SELECT agent, agent_start, agent_start_source, agent_end, agent_end_source
     FROM annotations WHERE DFCI_MRN=? AND report_id=? AND progression_date=? LIMIT 1
     """, (patient_id, report_id, progression_date))
     return cursor.fetchone()
 
-def delete_agent_assignment(rid, patient_id, progression_date):
+def delete_agent_assignment(rid: str, patient_id: str, progression_date: str) -> bool:
+    """Hard-delete an annotation row by its event key. Returns True if a row was removed.
+
+    Note: prefer soft-delete (deleted=1) for audit trails. This function is used
+    only for undoing an in-session agent assignment before any downstream use.
+    """
     cursor.execute("""
     DELETE FROM annotations WHERE DFCI_MRN=? AND report_id=? AND progression_date=?
     """, (patient_id, rid, progression_date))
@@ -314,26 +380,36 @@ def delete_agent_assignment(rid, patient_id, progression_date):
     ui.notify('No assignment found to remove', color='red')
     return False
 
-def get_clinician_events(patient_id):
+def get_clinician_events(patient_id: str) -> pd.DataFrame:
+    """Return all manually entered (clinician) annotation rows for a patient."""
     patient_id = normalize_patient_id(patient_id)
     return pd.read_sql_query("""
     SELECT * FROM annotations WHERE DFCI_MRN=? AND progression_source='manual'
     ORDER BY progression_date
     """, conn, params=(patient_id,))
 
-def safe_json_loads(x):
+def safe_json_loads(x) -> dict:
+    """Parse a JSON string, returning an empty dict on any failure or NaN input."""
     if pd.isna(x): return {}
     try: return json.loads(x)
     except: return {}
 
-def compress_blank_lines(text):
+def compress_blank_lines(text: str) -> str:
+    """Collapse runs of three or more blank lines down to a single blank line."""
     return re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
 
-def extract_field(pattern, text, default='unknown'):
+def extract_field(pattern: str, text: str, default: str = 'unknown') -> str:
+    """Extract the first capture group of a regex from text, or return default."""
     match = re.search(pattern, text, re.MULTILINE)
     return match.group(1).strip() if match else default
 
-def normalize_any_date(x):
+def normalize_any_date(x) -> str | None:
+    """Convert a date value to ISO-8601 string, or return None/'NA' for missing values.
+
+    Accepts multiple date formats common in clinical exports. Returns the literal
+    string 'NA' when the source value is the string 'NA' (indicating the LLM
+    determined no progression date was present but the event was still annotated).
+    """
     if pd.isna(x): return None
     x = str(x).strip()
     if not x or x.lower() == 'nan': return None
@@ -353,7 +429,8 @@ def dates_within_days(d1: str, d2: str, n: int = 7) -> bool:
     except Exception:
         return False
 
-def sort_date_key(x):
+def sort_date_key(x) -> str:
+    """Return an ISO date string suitable for lexicographic sort; unknown dates sort last."""
     d = normalize_any_date(x)
     if not d or pd.isna(d): return "9999-12-31"
     return str(d)
@@ -384,7 +461,12 @@ def get_agent_last_end(extraction, agent_name):
 # NOTE PARSING
 # =============================================================================
 
-def parse_notes(notes_text):
+def parse_notes(notes_text: str) -> list[dict]:
+    """Parse the concatenated notes string into a list of structured note dicts.
+
+    Each dict has keys: note_number, note_date, dept, author, report_id, body.
+    Notes are delimited by separator lines (40+ '=' or '-' characters).
+    """
     if not isinstance(notes_text, str): return []
     notes_text = compress_blank_lines(notes_text)
     notes = []
@@ -405,7 +487,14 @@ def parse_notes(notes_text):
 # HIGHLIGHTING
 # =============================================================================
 
-def highlight_evidence(note_text, evidence_text):
+def highlight_evidence(note_text: str, evidence_text: str) -> tuple:
+    """Wrap matching evidence text in an HTML highlight span.
+
+    Returns (html_str, matched_bool). Searches note_text for evidence_text
+    using a token-overlap heuristic and wraps the best match in a span with
+    class 'evidence-highlight'. Falls back to the plain escaped text if no
+    adequate match is found.
+    """
     if not evidence_text:
         return (html.escape(note_text), False)
 
@@ -456,7 +545,15 @@ def highlight_evidence(note_text, evidence_text):
 # HTML RENDER
 # =============================================================================
 
-def build_notes_html(notes, highlighted_report=None, evidence_text=None):
+def build_notes_html(notes: list[dict], highlighted_report: str | None = None,
+                     evidence_text: str | None = None) -> str:
+    """Render parsed note dicts to HTML for the right-panel pane.
+
+    Args:
+        notes: Output of parse_notes().
+        highlighted_report: report_id whose body should have evidence_text highlighted.
+        evidence_text: Passage to highlight inside the selected report.
+    """
     parts = []
     for note in notes:
         rid = note['report_id']
@@ -481,8 +578,11 @@ def build_notes_html(notes, highlighted_report=None, evidence_text=None):
 
 # =============================================================================
 # MULTI-INSTANCE DETECTION
+# Tracks connected browser clients so the UI can warn when multiple annotators
+# are accessing the same instance simultaneously.
 # =============================================================================
 
+# Shared mutable counter; incremented on connect, decremented on disconnect.
 _active_clients = {'count': 0, 'timestamps': []}
 
 
@@ -547,6 +647,12 @@ ui.add_head_html('''<script>
 
 @ui.page('/')
 def build_page():
+    """NiceGUI page factory for the main WATNEY interface.
+
+    Called once per browser connection. Builds the full page DOM including
+    the login overlay, left/right panel containers, nav bar, and all nested
+    closures that share state across patient navigation.
+    """
     global current_patient_index, agent_output, NOTE_FONT_SIZE
     global CURRENT_USER, UI_LOCKED, user_label, nav_bar, df
     global EXTRACTION_CSV_PATH, SQLITE_PATH, ANNOTATION_OUTPUT_DIR, CONFIG_PATH
@@ -1509,11 +1615,20 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 annotations_df[annotations_df['progression_source'] != 'exclusion_placeholder']['DFCI_MRN'].apply(safe_str).tolist()
             )
 
+        # Read exclusion status — patients.db in project mode, annotations in demo/legacy
         try:
-            _excl_df = pd.read_sql_query(
-                "SELECT DFCI_MRN, exclusion_flag FROM annotations WHERE exclusion_flag IS NOT NULL GROUP BY DFCI_MRN",
-                _db()
-            )
+            if not _demo_mode[0] and PROJECT_DIR is not None:
+                _pc = open_patients_db(PROJECT_DIR)
+                _excl_df = pd.read_sql_query(
+                    "SELECT DFCI_MRN, exclusion_flag FROM patients WHERE exclusion_flag IS NOT NULL",
+                    _pc
+                )
+                _pc.close()
+            else:
+                _excl_df = pd.read_sql_query(
+                    "SELECT DFCI_MRN, exclusion_flag FROM annotations WHERE exclusion_flag IS NOT NULL GROUP BY DFCI_MRN",
+                    _db()
+                )
             excluded_mrns = set(
                 _excl_df.loc[_excl_df['exclusion_flag'] == 'True', 'DFCI_MRN'].apply(safe_str).tolist()
             )
@@ -1589,10 +1704,43 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             )
         else:
             df_out = load_annotations_df()  # already filters soft-deleted rows
-        # Also drop exclusion_placeholder sentinel rows from real DB export
-        if not df_out.empty and 'progression_source' in df_out.columns:
-            df_out = df_out[df_out['progression_source'] != 'exclusion_placeholder'].copy()
-        if df_out.empty: ui.notify('No annotations to export', color='orange'); return
+            if not df_out.empty and 'progression_source' in df_out.columns:
+                df_out = df_out[df_out['progression_source'] != 'exclusion_placeholder'].copy()
+
+        # ── Apply exclusion status from patients.db at export time ───────────
+        if not _demo_mode[0] and PROJECT_DIR is not None:
+            try:
+                _pc = open_patients_db(PROJECT_DIR)
+                _pat_df = pd.read_sql_query("SELECT * FROM patients", _pc)
+                _pc.close()
+                if not _pat_df.empty and not df_out.empty:
+                    # Merge exclusion columns onto annotation rows
+                    _excl_cols = [c for c in ['exclusion_flag','exclusion_reason',
+                                               'excluded_by','excluded_at',
+                                               'unexclusion_reason','unexcluded_by','unexcluded_at']
+                                  if c in _pat_df.columns]
+                    _merge_cols = ['DFCI_MRN'] + _excl_cols
+                    _pat_excl = _pat_df[_merge_cols].copy()
+                    # Drop existing exclusion columns from df_out to avoid duplicates
+                    for _c in _excl_cols:
+                        if _c in df_out.columns:
+                            df_out = df_out.drop(columns=[_c])
+                    df_out = df_out.merge(_pat_excl, on='DFCI_MRN', how='left')
+
+                # Add stub rows for excluded patients with NO annotation rows
+                _excl_pat = _pat_df[_pat_df['exclusion_flag'] == 'True'] if not _pat_df.empty else pd.DataFrame()
+                if not _excl_pat.empty:
+                    _ann_mrns = set(df_out['DFCI_MRN'].apply(safe_str)) if not df_out.empty else set()
+                    _stub_mrns = _excl_pat[~_excl_pat['DFCI_MRN'].apply(safe_str).isin(_ann_mrns)]
+                    if not _stub_mrns.empty:
+                        _stubs = _stub_mrns.copy()
+                        _stubs['progression_source'] = 'excluded'
+                        df_out = pd.concat([df_out, _stubs], ignore_index=True)
+            except Exception:
+                pass
+
+        if df_out.empty:
+            ui.notify('No annotations to export', color='orange'); return
         # Sort by MRN order matching the input CSV
         if df is not None and not df_out.empty:
             try:
@@ -2402,59 +2550,98 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                  _eflag, _ereason, _ext_ver))
         dc.commit()
 
+    def _patients_conn():
+        """Return a connection to patients.db, or None in demo mode / no project."""
+        if _demo_mode[0] or PROJECT_DIR is None:
+            return None
+        return open_patients_db(PROJECT_DIR)
+
     def _get_exclusion(patient_id):
+        """Read exclusion status from patients.db (project mode) or annotations (demo/legacy)."""
+        pid = str(patient_id).strip()
+        pc = _patients_conn()
+        if pc is not None:
+            try:
+                row = pc.execute(
+                    "SELECT exclusion_flag, exclusion_reason, excluded_by, excluded_at, "
+                    "unexclusion_reason, unexcluded_by, unexcluded_at FROM patients WHERE DFCI_MRN=?",
+                    (pid,)
+                ).fetchone()
+                pc.close()
+                return row
+            except Exception:
+                pc.close()
+                return None
+        # Demo / legacy fallback: read from annotations
         try:
             _cr = _db().cursor()
-            _cr.execute("""
-                SELECT exclusion_flag, exclusion_reason, unexclusion_reason FROM annotations
-                WHERE DFCI_MRN=? AND exclusion_flag IS NOT NULL LIMIT 1
-            """, (str(patient_id).strip(),))
+            _cr.execute(
+                "SELECT exclusion_flag, exclusion_reason, unexclusion_reason FROM annotations "
+                "WHERE DFCI_MRN=? AND exclusion_flag IS NOT NULL LIMIT 1",
+                (pid,)
+            )
             return _cr.fetchone()
         except Exception:
             return None
 
     def _set_exclusion(patient_id, flag, reason):
-        _cr = _db().cursor()
+        """Write exclusion status to patients.db (project mode) or annotations (demo/legacy)."""
         pid = str(patient_id).strip()
+        now = datetime.now().isoformat(timespec='seconds')
+        pc = _patients_conn()
+        if pc is not None:
+            # ── Project mode: write to patients.db ───────────────────────────
+            if flag:
+                pc.execute(
+                    """UPDATE patients SET exclusion_flag='True', exclusion_reason=?,
+                       excluded_by=?, excluded_at=?,
+                       unexclusion_reason=NULL, unexcluded_by=NULL, unexcluded_at=NULL
+                       WHERE DFCI_MRN=?""",
+                    (reason, CURRENT_USER, now, pid)
+                )
+            else:
+                pc.execute(
+                    """UPDATE patients SET exclusion_flag=NULL, exclusion_reason=NULL,
+                       excluded_by=NULL, excluded_at=NULL,
+                       unexclusion_reason=?, unexcluded_by=?, unexcluded_at=?
+                       WHERE DFCI_MRN=?""",
+                    (reason, CURRENT_USER, now, pid)
+                )
+            pc.commit()
+            pc.close()
+            return
+        # ── Demo / legacy fallback: write to annotations ──────────────────────
+        _cr = _db().cursor()
         if flag:
-            # ── Excluding ────────────────────────────────────────────────────
             flag_str = 'True'
-            _cr.execute("""
-                UPDATE annotations SET exclusion_flag=?, exclusion_reason=? WHERE DFCI_MRN=?
-            """, (flag_str, reason, pid))
+            _cr.execute(
+                "UPDATE annotations SET exclusion_flag=?, exclusion_reason=? WHERE DFCI_MRN=?",
+                (flag_str, reason, pid)
+            )
             if _cr.rowcount == 0:
-                # No existing rows — insert sentinel
-                _cr.execute("""
-                    INSERT INTO annotations
-                        (DFCI_MRN, progression_source, exclusion_flag, exclusion_reason,
-                         user, modification_timestamp)
-                    VALUES (?, 'exclusion_placeholder', ?, ?, ?, ?)
-                """, (pid, flag_str, reason, CURRENT_USER,
-                      datetime.now().isoformat(timespec='seconds')))
+                _cr.execute(
+                    """INSERT INTO annotations
+                       (DFCI_MRN, progression_source, exclusion_flag, exclusion_reason,
+                        user, modification_timestamp)
+                       VALUES (?, 'exclusion_placeholder', ?, ?, ?, ?)""",
+                    (pid, flag_str, reason, CURRENT_USER, now)
+                )
         else:
-            # ── Re-including ─────────────────────────────────────────────────
-            # Delete any sentinel placeholder rows entirely
-            _cr.execute("""
-                DELETE FROM annotations
-                WHERE DFCI_MRN=? AND progression_source='exclusion_placeholder'
-            """, (pid,))
-            # Clear exclusion fields and record the un-exclusion reason + who/when
-            _cr.execute("""
-                UPDATE annotations
-                SET exclusion_flag=NULL, exclusion_reason=NULL,
-                    unexclusion_reason=?,
-                    user=COALESCE(user, ?),
-                    modification_timestamp=?
-                WHERE DFCI_MRN=?
-            """, (reason, CURRENT_USER, datetime.now().isoformat(timespec='seconds'), pid))
+            _cr.execute(
+                "DELETE FROM annotations WHERE DFCI_MRN=? AND progression_source='exclusion_placeholder'",
+                (pid,)
+            )
+            _cr.execute(
+                """UPDATE annotations SET exclusion_flag=NULL, exclusion_reason=NULL,
+                   unexclusion_reason=?, user=COALESCE(user,?), modification_timestamp=?
+                   WHERE DFCI_MRN=?""",
+                (reason, CURRENT_USER, now, pid)
+            )
         _db().commit()
         if not _demo_mode[0]:
             refresh_annotations_df()
 
     def _show_exclusion_dialog(patient_id, currently_excluded):
-        from nicegui import context as _ctx
-        _page_client = _ctx.slot.parent.client
-
         action_label = 'Remove Exclusion' if currently_excluded else 'Exclude Patient'
         with ui.dialog() as excl_dlg, ui.card().classes('w-[440px]'):
             ui.label(action_label).classes('text-base font-bold')
@@ -2469,22 +2656,11 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             reason_input = ui.textarea(label=_reason_label).classes('w-full mt-2')
             reason_input.props('outlined dense')
             err_label = ui.label('').classes('text-xs text-red-500')
-            status_label = ui.label('').classes('text-sm font-semibold mt-1')
-
-            post_confirm_row = ui.row().classes('w-full justify-end gap-2 mt-2')
-            post_confirm_row.set_visibility(False)
             action_row = ui.row().classes('w-full justify-end gap-2 mt-3')
-
-            with post_confirm_row:
-                def _go_next(d=excl_dlg):
-                    d.close()
-                    async def _deferred_next():
-                        if current_patient_index < len(df) - 1:
-                            next_patient()
-                    import asyncio
-                    asyncio.ensure_future(_deferred_next())
-                ui.button('Stay on Patient', on_click=excl_dlg.close).props('flat dense')
-                ui.button('Next Patient →', on_click=_go_next).props('dense')
+            # Capture client while dialog slot is still valid
+            from nicegui import context as _ctx
+            import asyncio as _asyncio
+            _client = _ctx.slot.parent.client
 
             with action_row:
                 def _do_confirm():
@@ -2494,20 +2670,14 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                         return
                     new_excluded = 0 if currently_excluded else 1
                     _set_exclusion(patient_id, new_excluded, reason)
-                    if new_excluded:
-                        status_label.set_text('✓ Patient has been excluded.')
-                        status_label.classes('text-red-600', remove='text-green-600')
-                    else:
-                        status_label.set_text('✓ Patient has been re-included.')
-                        status_label.classes('text-green-600', remove='text-red-600')
-                    action_row.set_visibility(False)
-                    reason_input.set_enabled(False)
-                    post_confirm_row.set_visibility(True)
-                    async def _deferred_render():
-                        with _page_client:
+                    msg = '✓ Patient excluded.' if new_excluded else '✓ Patient re-included.'
+                    color = 'negative' if new_excluded else 'positive'
+                    excl_dlg.close()
+                    ui.notify(msg, color=color, timeout=2500)
+                    async def _render():
+                        with _client:
                             render_patient(current_patient_index)
-                    import asyncio
-                    asyncio.ensure_future(_deferred_render())
+                    _asyncio.get_running_loop().create_task(_render())
 
                 ui.button('Cancel', on_click=excl_dlg.close).props('flat dense')
                 ui.button(action_label, on_click=_do_confirm).props(
@@ -2608,16 +2778,17 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         drug_names = sorted([a.get('drug_name') for a in systemic.get('agents', []) if a.get('drug_name')])
         events     = extraction.get('progression', {}).get('progression_events', [])
 
-        ui.run_javascript(f"""
-            let el=document.getElementById('wfont');
-            if(!el){{el=document.createElement('style');el.id='wfont';document.head.appendChild(el);}}
-            el.textContent='pre{{font-size:{NOTE_FONT_SIZE}px!important;}}';
-            // Apply cmd-f preference from config
-            window._watneyCmdfEnabled = {'false' if load_config().get('disable_cmdf', False) else 'true'};
-        """)
+        _note_font = NOTE_FONT_SIZE
+        _cmdf_off  = load_config().get('disable_cmdf', False)
 
         with left_panel:
-            # Header row
+            # Apply font size and cmdf preference — inside left_panel where slot is always valid
+            ui.run_javascript(f"""
+                let el=document.getElementById('wfont');
+                if(!el){{el=document.createElement('style');el.id='wfont';document.head.appendChild(el);}}
+                el.textContent='pre{{font-size:{_note_font}px!important;}}';
+                window._watneyCmdfEnabled = {'false' if _cmdf_off else 'true'};
+            """)
             with ui.row().classes('w-full items-start justify-between no-wrap'):
                 with ui.column().classes('gap-0'):
                     # Update badge next to WATNEY header
@@ -2694,9 +2865,10 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                         from nicegui import context as _ctx
                         import asyncio as _asyncio
                         _client = _ctx.slot.parent.client
-                        async def _deferred_render(c=_client, idx=current_patient_index):
-                            with c:
-                                render_patient(idx)
+                        _idx = current_patient_index
+                        async def _deferred_render():
+                            with _client:
+                                render_patient(_idx)
                         _asyncio.get_running_loop().create_task(_deferred_render())
 
                     _ext_select.on('update:model-value', _on_extraction_change)
@@ -2711,26 +2883,26 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             _excl = _get_exclusion(patient_id)
             _is_excluded = bool(_excl and _excl['exclusion_flag'] == 'True')
 
+            # ── MRN header + exclusion button ────────────────────────────────
             with ui.row().classes('w-full items-center justify-between'):
                 ui.label(f'Patient {patient_id} | Row {index+1}/{len(df)}').classes('text-xl font-bold')
-                if not _is_excluded:
-                    ui.button(
-                        'Exclude Patient',
-                        on_click=lambda pid=patient_id: _show_exclusion_dialog(pid, False)
-                    ).props('dense outline size=sm')
+                ui.button(
+                    'Un-exclude Patient' if _is_excluded else 'Exclude Patient',
+                    on_click=lambda pid=patient_id, excl=_is_excluded:
+                        _show_exclusion_dialog(pid, excl)
+                ).props('dense outline size=sm').classes(
+                    'text-green-700' if _is_excluded else ''
+                )
 
+            # ── Exclusion banner (shown immediately under MRN when excluded) ─
             if _is_excluded:
                 with ui.card().classes('w-full').style(
                     'background:#fef2f2;border:1px solid #fca5a5;padding:8px;margin-bottom:6px;'
                 ):
                     ui.label('⚠ Patient Excluded').classes('text-sm font-bold text-red-600')
-                    ui.label(f'Reason: {_excl["exclusion_reason"] or "No reason given"}').classes(
-                        'text-xs text-red-500'
-                    )
-                    ui.button(
-                        'Un-exclude Patient',
-                        on_click=lambda pid=patient_id: _show_exclusion_dialog(pid, True)
-                    ).props('dense outline size=sm').classes('text-green-700 mt-1')
+                    ui.label(
+                        f'Reason: {_excl["exclusion_reason"] or "No reason given"}'
+                    ).classes('text-xs text-red-500')
 
             ui.label('Progression Summary').classes('text-sm font-bold')
 
@@ -3746,6 +3918,11 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
 @ui.page('/easter-egg')
 def easter_egg_page():
+    """Standalone Easter egg page; navigated to when 'Mark Watney' is entered as username.
+
+    Self-contained HTML/CSS/JS with no Python callbacks. Both navigation
+    buttons perform window.location.replace('/') to return to the main page.
+    """
     """Standalone Mars-themed easter egg. Pure HTML/CSS/JS — no polling timers."""
     ui.add_head_html('''<style>
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -3867,6 +4044,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;}
 # =============================================================================
 
 def main():
+    """Launch the WATNEY NiceGUI server.
+
+    Reads watney_icon.ico from the package directory if present. Runs with
+    reload=False to avoid double-initialisation of module-level state.
+    Call this function directly or via the 'watney' console script entry point.
+    """
     _favicon = Path(__file__).parent / 'watney_icon.ico'
     _favicon_arg = str(_favicon) if _favicon.exists() else None
     try:

@@ -1189,7 +1189,10 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
              '🔍', None),
             ('Progression Summary',
              'The Progression Summary table at the top of the left panel shows every assigned event for the current patient: '
-             'date, agent, start/end dates, source, and annotator. It updates the moment you save or remove an assignment.',
+             'date, agent, start/end dates, source, annotator, and extraction version. '
+             'It updates the moment you save or remove an assignment. '
+             'Use the × button on any row to soft-delete that annotation — '
+             'the record is preserved in the database for audit purposes but excluded from exports.',
              '📋', None),
             ('Agent Intervals Box',
              'Select an agent from the dropdown to see its treatment intervals extracted by the LLM. '
@@ -1225,8 +1228,10 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
              'Click any section to expand or collapse it.',
              '🔬', None),
             ('Export & Settings',
-             'Export downloads all annotations as a timestamped CSV. '
-             'Settings lets you adjust font size, change file paths, check for updates, and view database stats. '
+             'Export downloads all annotations as a timestamped CSV (also auto-saved to the project exports/ folder). '
+             'Settings lets you adjust note font size, configure the Cmd/Ctrl-F search shortcut, '
+             'rename the project, manage checkpoint intervals, load a new extraction CSV, '
+             'import annotations from a prior export, check for updates, and view annotation stats. '
              'Both buttons toggle closed if clicked again while open.',
              '⚙️', None),
         ]
@@ -2471,26 +2476,25 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
     _demo_mode = [False]
     _demo_conn = [None]
 
-    DEMO_SCHEMA = """
-    CREATE TABLE IF NOT EXISTS annotations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        DFCI_MRN TEXT NOT NULL, progression_date TEXT,
-        progression_source TEXT, agent TEXT, evidence TEXT,
-        report_id TEXT, determined_by TEXT, user TEXT,
-        modification_timestamp TEXT,
-        agent_start TEXT, agent_start_source TEXT,
-        agent_end TEXT, agent_end_source TEXT,
-        exclusion_flag TEXT, exclusion_reason TEXT,
-        extraction_version TEXT,
-        deleted INTEGER DEFAULT 0, deletion_reason TEXT, deletion_timestamp TEXT,
-        import_source TEXT)"""
-
     def _ensure_demo_conn():
         if _demo_conn[0] is None:
             import sqlite3 as _sq
             dc = _sq.connect(':memory:', check_same_thread=False)
             dc.row_factory = _sq.Row
-            dc.execute(DEMO_SCHEMA)
+            # Schema must match _bootstrap_legacy_db (real DB) column-for-column so that
+            # _get_exclusion / _set_exclusion and any future helpers work identically in
+            # demo mode without branching.  Add columns here whenever the real schema grows.
+            dc.execute("""CREATE TABLE IF NOT EXISTS annotations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                DFCI_MRN TEXT NOT NULL,
+                progression_date TEXT, progression_source TEXT, agent TEXT,
+                evidence TEXT, report_id TEXT, determined_by TEXT, user TEXT,
+                modification_timestamp TEXT,
+                agent_start TEXT, agent_start_source TEXT,
+                agent_end TEXT, agent_end_source TEXT,
+                exclusion_flag TEXT, exclusion_reason TEXT, extraction_version TEXT,
+                deleted INTEGER DEFAULT 0, deletion_reason TEXT, deletion_timestamp TEXT,
+                import_source TEXT, unexclusion_reason TEXT)""")
             dc.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_demo
                 ON annotations(DFCI_MRN,progression_date,progression_source,report_id)""")
             dc.commit()

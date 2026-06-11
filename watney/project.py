@@ -240,7 +240,8 @@ CREATE TABLE IF NOT EXISTS annotations (
     deletion_reason      TEXT,
     deletion_timestamp   TEXT,
     import_source        TEXT,
-    unexclusion_reason   TEXT
+    unexclusion_reason   TEXT,
+    agent_note           TEXT
 )
 """
 
@@ -263,6 +264,7 @@ _ANNOTATIONS_OPTIONAL_COLS = [
     ('deletion_timestamp', 'TEXT'),
     ('import_source',      'TEXT'),
     ('unexclusion_reason', 'TEXT'),
+    ('agent_note',         'TEXT'),
 ]
 
 

@@ -146,7 +146,7 @@ def _bootstrap_legacy_db():
         agent_end TEXT, agent_end_source TEXT,
         exclusion_flag TEXT, exclusion_reason TEXT, extraction_version TEXT,
         deleted INTEGER DEFAULT 0, deletion_reason TEXT, deletion_timestamp TEXT,
-        import_source TEXT, unexclusion_reason TEXT)""")
+        import_source TEXT, unexclusion_reason TEXT, agent_note TEXT)""")
     c.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_progression_event
         ON annotations (DFCI_MRN, progression_date, progression_source, report_id)""")
     for _col, _typ in [
@@ -155,7 +155,7 @@ def _bootstrap_legacy_db():
         ('exclusion_flag','TEXT'),('exclusion_reason','TEXT'),
         ('extraction_version','TEXT'),
         ('deleted','INTEGER'),('deletion_reason','TEXT'),('deletion_timestamp','TEXT'),
-        ('import_source','TEXT'),('unexclusion_reason','TEXT'),
+        ('import_source','TEXT'),('unexclusion_reason','TEXT'),('agent_note','TEXT'),
     ]:
         try: c.execute(f'ALTER TABLE annotations ADD COLUMN {_col} {_typ}')
         except sqlite3.OperationalError: pass
@@ -281,14 +281,14 @@ def upsert_annotation(new_row: dict):
         UPDATE annotations
         SET agent=?, evidence=?, determined_by=?, user=?, modification_timestamp=?,
             agent_start=?, agent_start_source=?, agent_end=?, agent_end_source=?,
-            extraction_version=COALESCE(?,extraction_version)
+            extraction_version=COALESCE(?,extraction_version), agent_note=?
         WHERE id=?
         """, (
             new_row['agent'], new_row['evidence'], new_row['determined_by'],
             new_row.get('user'), new_row['modification_timestamp'],
             new_row.get('agent_start'), new_row.get('agent_start_source'),
             new_row.get('agent_end'),   new_row.get('agent_end_source'),
-            _ext_ver, existing['id']
+            _ext_ver, new_row.get('agent_note'), existing['id']
         ))
     else:
         cursor.execute("""
@@ -303,15 +303,15 @@ def upsert_annotation(new_row: dict):
             DFCI_MRN, progression_date, progression_source, agent, evidence,
             report_id, determined_by, user, modification_timestamp,
             agent_start, agent_start_source, agent_end, agent_end_source,
-            exclusion_flag, exclusion_reason, extraction_version)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            exclusion_flag, exclusion_reason, extraction_version, agent_note)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             new_row['DFCI_MRN'], new_row['progression_date'], new_row['progression_source'],
             new_row['agent'], new_row['evidence'], new_row['report_id'],
             new_row['determined_by'], new_row.get('user'), new_row['modification_timestamp'],
             new_row.get('agent_start'), new_row.get('agent_start_source'),
             new_row.get('agent_end'),   new_row.get('agent_end_source'),
-            _eflag, _ereason, _ext_ver,
+            _eflag, _ereason, _ext_ver, new_row.get('agent_note'),
         ))
     save_annotations()
 
@@ -2494,7 +2494,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 agent_end TEXT, agent_end_source TEXT,
                 exclusion_flag TEXT, exclusion_reason TEXT, extraction_version TEXT,
                 deleted INTEGER DEFAULT 0, deletion_reason TEXT, deletion_timestamp TEXT,
-                import_source TEXT, unexclusion_reason TEXT)""")
+                import_source TEXT, unexclusion_reason TEXT, agent_note TEXT)""")
             dc.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_demo
                 ON annotations(DFCI_MRN,progression_date,progression_source,report_id)""")
             dc.commit()
@@ -2526,11 +2526,12 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             cr.execute("""UPDATE annotations
                 SET agent=?,evidence=?,determined_by=?,user=?,modification_timestamp=?,
                     agent_start=?,agent_start_source=?,agent_end=?,agent_end_source=?,
-                    extraction_version=COALESCE(?,extraction_version)
+                    extraction_version=COALESCE(?,extraction_version),agent_note=?
                 WHERE id=?""",
                 (row['agent'], row['evidence'], row['determined_by'], row.get('user'),
                  row['modification_timestamp'], row.get('agent_start'), row.get('agent_start_source'),
-                 row.get('agent_end'), row.get('agent_end_source'), _ext_ver, existing['id']))
+                 row.get('agent_end'), row.get('agent_end_source'), _ext_ver,
+                 row.get('agent_note'), existing['id']))
         else:
             _ecr = dc.cursor()
             _ecr.execute("""
@@ -2544,14 +2545,14 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 (DFCI_MRN,progression_date,progression_source,agent,evidence,
                  report_id,determined_by,user,modification_timestamp,
                  agent_start,agent_start_source,agent_end,agent_end_source,
-                 exclusion_flag,exclusion_reason,extraction_version)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 exclusion_flag,exclusion_reason,extraction_version,agent_note)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (row['DFCI_MRN'], row['progression_date'], row['progression_source'],
                  row['agent'], row['evidence'], row['report_id'],
                  row['determined_by'], row.get('user'), row['modification_timestamp'],
                  row.get('agent_start'), row.get('agent_start_source'),
                  row.get('agent_end'), row.get('agent_end_source'),
-                 _eflag, _ereason, _ext_ver))
+                 _eflag, _ereason, _ext_ver, row.get('agent_note')))
         dc.commit()
 
     def _patients_conn():
@@ -3098,6 +3099,9 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                         ui.label(f"Start: {crow.get('agent_start','')}  End: {crow.get('agent_end','')}").classes('text-xs')
                         ui.label(f"Evidence: {crow.get('evidence','')}").classes('text-xs')
                         ui.label(f"Determined by: {crow.get('determined_by','')}").classes('text-xs')
+                        _anote = crow.get('agent_note', '')
+                        if _anote and str(_anote).strip() not in ('', 'NA', 'None', 'nan'):
+                            ui.label(f"Note: {_anote}").classes('text-xs text-blue-700')
                         def delete_clin_event(rid=crow['report_id'], card=clin_card):
                             if _demo_mode[0]:
                                 _cr = _db().cursor()
@@ -3140,6 +3144,33 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                     clinician_agent.value = name
                     clinician_agent.update(); custom_agent_input.value = ''
                 ui.button('Add', on_click=add_custom_agent).props('dense outline')
+
+            _AGENT_NOTE_OPTIONS = [
+                'Discontinued due to adverse event',
+                'Discontinued due to completion of planned course',
+                'Discontinued due to patient preference',
+                'Discontinued due to non-progression clinical decline',
+                'Discontinued due to alternative therapy',
+                'Other',
+            ]
+            with ui.row().classes('w-full items-center gap-2'):
+                agent_note_select = ui.select(
+                    _AGENT_NOTE_OPTIONS, label='Add note about agent'
+                ).classes('flex-grow')
+                agent_note_other = ui.input(
+                    label='Specify', placeholder='free text'
+                ).classes('flex-grow')
+                agent_note_other.set_visibility(False)
+                def _clear_agent_note():
+                    agent_note_select.value = None
+                    agent_note_other.value = ''
+                    agent_note_other.set_visibility(False)
+                ui.button('No Note', on_click=_clear_agent_note).props('dense outline').classes('text-gray-500')
+
+            def _on_agent_note_change(_):
+                agent_note_other.set_visibility(agent_note_select.value == 'Other')
+
+            agent_note_select.on('update:model-value', _on_agent_note_change)
 
             with ui.row().classes('w-full gap-2 items-center'):
                 clin_start_input = ui.input(label='Agent start date', placeholder='YYYY-MM-DD').classes('flex-grow')
@@ -3234,6 +3265,14 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 a_start_src = 'manual' if rs  and rs  != ls else ('LLM' if ls else None)
                 a_end       = clean_date_input(re_) if re_ else le
                 a_end_src   = 'manual' if re_ and re_ != le else ('LLM' if le else None)
+                _note_sel = agent_note_select.value
+                if _note_sel == 'Other':
+                    _other_txt = (agent_note_other.value or '').strip()
+                    agent_note_val = f'Other: {_other_txt}' if _other_txt else 'Other'
+                elif _note_sel:
+                    agent_note_val = _note_sel
+                else:
+                    agent_note_val = 'NA'
                 _demo_upsert({
                     'DFCI_MRN': str(pid).strip(), 'progression_date': cleaned_date,
                     'progression_source': 'manual',
@@ -3245,6 +3284,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                     'modification_timestamp': datetime.now().isoformat(timespec='seconds'),
                     'agent_start': a_start, 'agent_start_source': a_start_src,
                     'agent_end': a_end, 'agent_end_source': a_end_src,
+                    'agent_note': agent_note_val,
                 })
                 if not _demo_mode[0]: pass
                 else: ui.notify('Clinician event saved', color='green')
@@ -3258,6 +3298,8 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 clinician_determined_by.value = ''; clinician_agent.value = None
                 clinician_report_id.value = ''; clin_start_input.value = ''
                 clin_end_input.value = ''; clin_llm_hint.set_text('')
+                agent_note_select.value = None; agent_note_other.value = ''
+                agent_note_other.set_visibility(False)
                 render_patient(current_patient_index)
 
             ui.button('Save Clinician Progression Event', on_click=save_clinician_event).props('dense')

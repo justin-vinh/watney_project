@@ -1390,10 +1390,14 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         _login_bottom.set_visibility(False)
 
     # ── Scroll ────────────────────────────────────────────────────────────────
-    def scroll_to_note(report_id, evidence_text=''):
+    async def scroll_to_note(report_id, evidence_text=''):
         row = df.iloc[current_patient_index]
         notes_html = build_notes_html(parse_notes(row[NOTES_COL]),
                                       highlighted_report=report_id, evidence_text=evidence_text)
+        # Clear any active notes-search highlight spans before NiceGUI clears
+        # this panel — otherwise Vue's reconciliation can hit DOM nodes the
+        # search JS spliced in directly and throw, killing the page.
+        await _save_search_state()
         right_panel.clear()
         with right_panel:
             ui.html('<div id="note-sticky-header"></div>')
@@ -1677,9 +1681,9 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                             ui.label(rd['pid']).style('width:160px;')
                             ui.label('Yes' if rd['has'] else 'No').style(f'width:80px;{ann_color}')
                             ui.label('Excluded' if rd['excl'] else 'Included').style(f'width:80px;{excl_color}')
-                            def go(idx=rd['idx'], d=dlg):
+                            async def go(idx=rd['idx'], d=dlg):
                                 global current_patient_index
-                                _save_search_state()
+                                await _save_search_state()
                                 current_patient_index = idx
                                 _open_dialogs['patient_list'] = None
                                 d.close()
@@ -2772,6 +2776,15 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             _demo_mode[0] = demo
         if not _demo_mode[0]:
             refresh_annotations_df()
+        # Defensive: strip any active notes-search highlight <span> wrappers
+        # before clearing the panel. Callers on the hot navigation paths
+        # (Next/Prev/Go/scroll_to_note/logout) already await this via
+        # _save_search_state, which guarantees ordering. This fire-and-forget
+        # call is a safety net for the other render_patient call sites (sort
+        # change, undo, annotation save, exclusion toggle, etc.) — NiceGUI
+        # sends messages over one ordered channel, so in practice this still
+        # reaches the browser before the clear() messages below.
+        ui.run_javascript('if(window._watneyPreNavClearHL) window._watneyPreNavClearHL();')
         left_panel.clear()
         right_panel.clear()
 
@@ -3590,9 +3603,11 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
   function clearHL(){
     document.querySelectorAll('.hl').forEach(function(el){
-      el.parentNode.replaceChild(document.createTextNode(el.textContent),el);
+      try{
+        if(el.parentNode) el.parentNode.replaceChild(document.createTextNode(el.textContent),el);
+      }catch(e){ /* already detached by an unrelated render — ignore */ }
     });
-    try{document.querySelector('.right-pane').normalize();}catch(e){}
+    try{var _rp=document.querySelector('.right-pane'); if(_rp) _rp.normalize();}catch(e){}
     marks=[]; cur=-1;
     var ct=document.getElementById('ws-count'); if(ct) ct.textContent='';
     _clearScrollMarkers();
@@ -3609,6 +3624,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
     return e;
   }
 
+  var MAX_MARKS = 500;  // hard cap — beyond this, wrapping every match is what froze the tab
   function doSearch(terms, isDrug){
     clearHL();
     if(!terms||!terms.length||!terms[0]) return;
@@ -3620,12 +3636,17 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
     var walker = document.createTreeWalker(rp, NodeFilter.SHOW_TEXT, null, false);
     var nodes = [], n;
     while((n = walker.nextNode())) nodes.push(n);
-    nodes.forEach(function(tn){
+    var truncated = false;
+    for(var ni=0; ni<nodes.length; ni++){
+      if(marks.length >= MAX_MARKS){ truncated = true; break; }
+      var tn = nodes[ni];
       var t = tn.textContent;
-      if(!re.test(t)){ re.lastIndex=0; return; }
+      re.lastIndex = 0;
+      if(!re.test(t)){ continue; }
       re.lastIndex = 0;
       var frag = document.createDocumentFragment(), last = 0, m;
       while((m = re.exec(t)) !== null){
+        if(marks.length >= MAX_MARKS){ truncated = true; break; }
         if(m.index > last) frag.appendChild(document.createTextNode(t.slice(last, m.index)));
         var sp = document.createElement('span');
         sp.className = 'hl'; sp.textContent = m[0];
@@ -3634,14 +3655,31 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
       }
       if(last < t.length) frag.appendChild(document.createTextNode(t.slice(last)));
       tn.parentNode.replaceChild(frag, tn);
-    });
+    }
     var ct = document.getElementById('ws-count');
-    if(ct) ct.textContent = marks.length ? ('1/' + marks.length) : '0 results';
+    if(ct){
+      if(truncated) ct.textContent = marks.length + '+ — refine search';
+      else ct.textContent = marks.length ? ('1/' + marks.length) : '0 results';
+    }
     if(marks.length){ cur = 0; goTo(0); }
     _renderScrollMarkers();
   }
 
   // Render thin tick marks on the right-pane scrollbar track showing where highlights are
+  var MAX_SCROLL_TICKS = 300;  // beyond this, ticks would overlap anyway — cap to avoid per-match reflow cost
+  function _offsetTopWithin(el, ancestor){
+    // Sum offsetTop up the offsetParent chain until we reach `ancestor`.
+    // Uses cached layout boxes (offsetTop/offsetParent), not a forced reflow
+    // the way calling getBoundingClientRect() per element in a loop does.
+    var top = 0, node = el;
+    var guard = 0;
+    while(node && node !== ancestor && guard < 200){
+      top += node.offsetTop || 0;
+      node = node.offsetParent;
+      guard++;
+    }
+    return top;
+  }
   function _renderScrollMarkers(){
     var rp = document.querySelector('.right-pane');
     var container = document.getElementById('ws-scroll-markers');
@@ -3654,30 +3692,38 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         'position:fixed;top:0;width:8px;background:transparent;pointer-events:none;z-index:199;';
       document.body.appendChild(container);
     }
-    container.innerHTML = '';
     if(!marks.length){
+      container.innerHTML = '';
       container.style.display='none'; return;
     }
+    // Single reflow-forcing read for the whole batch, not one per mark.
     var rpRect = rp.getBoundingClientRect();
     var scrollH = rp.scrollHeight;
-    var clientH = rp.clientHeight;
     container.style.display = 'block';
     container.style.left    = (rpRect.right - 6) + 'px';
     container.style.top     = rpRect.top + 'px';
     container.style.height  = rpRect.height + 'px';
-    marks.forEach(function(mk){
-      var mkRect = mk.getBoundingClientRect();
-      // Position relative to scroll content
-      var absTop = mkRect.top - rpRect.top + rp.scrollTop;
-      var pct = absTop / scrollH;
+
+    // Sample at most MAX_SCROLL_TICKS marks, evenly spaced through the list,
+    // so a huge match count still produces a useful overview without doing
+    // one DOM measurement + element per match.
+    var step = Math.max(1, Math.ceil(marks.length / MAX_SCROLL_TICKS));
+    var frag = document.createDocumentFragment();
+    for(var i=0; i<marks.length; i+=step){
+      var mk = marks[i];
+      var absTop = _offsetTopWithin(mk, rp);
+      var pct = scrollH ? (absTop / scrollH) : 0;
       var tickTop = pct * rpRect.height;
       var tick = document.createElement('div');
+      tick.dataset.markIndex = String(i);
       tick.style.cssText =
         'position:absolute;left:0;width:8px;height:5px;border-radius:2px;'+
         'background:#f97316;opacity:0.75;'+
         'top:' + tickTop + 'px;';
-      container.appendChild(tick);
-    });
+      frag.appendChild(tick);
+    }
+    container.innerHTML = '';
+    container.appendChild(frag);
   }
 
   function _clearScrollMarkers(){
@@ -3694,10 +3740,11 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
     if(ct) ct.textContent=(i+1)+'/'+marks.length;
     // Highlight the active tick in the scrollbar overlay
     var ticks = document.querySelectorAll('#ws-scroll-markers div');
-    ticks.forEach(function(t,ti){
-      t.style.background = (ti===i) ? '#ef4444' : '#f97316';
-      t.style.opacity    = (ti===i) ? '1' : '0.65';
-      t.style.height     = (ti===i) ? '8px' : '5px';
+    ticks.forEach(function(t){
+      var isCur = Number(t.dataset.markIndex) === i;
+      t.style.background = isCur ? '#ef4444' : '#f97316';
+      t.style.opacity    = isCur ? '1' : '0.65';
+      t.style.height     = isCur ? '8px' : '5px';
     });
   }
   function step(d){if(!marks.length) return; cur=(cur+d+marks.length)%marks.length; goTo(cur);}
@@ -3719,10 +3766,16 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
   }
 
   var _lastQ = '';  // track query changes to reset disabled state
+  var MIN_QUERY_LEN = 2;  // below this, matches are too dense — would freeze the tab
   function run(){
     var inp=document.getElementById('ws-input'); if(!inp||inp.disabled) return;
     var q=inp.value.trim();
     if(!q){clearHL(); ad.style.display='none'; _lastQ=''; saveState(); return;}
+    if(q.length < MIN_QUERY_LEN){
+      clearHL();
+      var ct0=document.getElementById('ws-count'); if(ct0) ct0.textContent='keep typing\u2026';
+      _lastQ = q; saveState(); return;
+    }
     // Reset disabled chips when the search term changes
     if(q.toLowerCase() !== _lastQ.toLowerCase()){ disabled={}; }
     _lastQ = q;
@@ -3743,8 +3796,18 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
     saveState();  // always keep state current
   }
 
+  // Debounce: doSearch() walks every text node in .right-pane and can produce
+  // thousands of highlight spans for short/common queries. Running it on
+  // every single keydown was forcing a full DOM rewrite + scrollbar marker
+  // rebuild per keystroke, which is what froze the tab while typing.
+  var _runDebounceTimer = null;
+  function _runDebounced(){
+    if(_runDebounceTimer) clearTimeout(_runDebounceTimer);
+    _runDebounceTimer = setTimeout(run, 180);
+  }
+
   var inp=document.getElementById('ws-input');
-  if(inp) inp.addEventListener('input',run);
+  if(inp) inp.addEventListener('input',_runDebounced);
   var prevBtn=document.getElementById('ws-prev');
   var nextBtn=document.getElementById('ws-next');
   var xBtn=document.getElementById('ws-x');
@@ -3806,6 +3869,19 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
   // Also save whenever the strip visibility changes (navigation, close)
   window._watneySearchSaveState = saveState;
 
+  // Called from Python immediately before render_patient/right_panel.clear().
+  // Saves the query/open/nlp state AND strips the <span class="hl"> highlight
+  // wrappers back out to plain text nodes, restoring .right-pane to the DOM
+  // shape NiceGUI's Vue layer originally rendered. Without this, clearHL()
+  // never ran before the panel was cleared, so Vue tried to patch/remove
+  // nodes it no longer recognized (we'd spliced text nodes into <span> wrappers
+  // out from under it) and threw, killing the websocket — which looked like
+  // the app randomly dumping back to the login screen on reconnect.
+  window._watneyPreNavClearHL = function(){
+    saveState();
+    clearHL();
+  };
+
   window.WS={
     open:function(){
       if(strip.style.display==='flex' && !strip.classList.contains('ws-grayed')){
@@ -3831,29 +3907,41 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 """), once=True)
 
     # ── Navigation ────────────────────────────────────────────────────────────
-    def _save_search_state():
-        """Call JS saveState before render_patient tears down the DOM."""
-        ui.run_javascript('if(window._watneySearchSaveState) window._watneySearchSaveState();')
+    async def _save_search_state():
+        """Await JS saveState+clearHL before render_patient tears down the DOM.
 
-    def next_patient():
+        Must be awaited (not fire-and-forget) — render_patient immediately
+        follows with right_panel.clear(), and if the search highlight <span>
+        wrappers are still in the DOM when NiceGUI/Vue reconciles that clear,
+        Vue throws trying to patch nodes it doesn't recognize. That JS
+        exception kills the page's websocket; the client reconnects and
+        build_page() reruns from scratch, which looks like a crash back to
+        the login screen.
+        """
+        await ui.run_javascript(
+            'if(window._watneyPreNavClearHL) window._watneyPreNavClearHL();'
+            'else if(window._watneySearchSaveState) window._watneySearchSaveState();'
+        )
+
+    async def next_patient():
         global current_patient_index
         if current_patient_index < len(df) - 1:
-            _save_search_state()
+            await _save_search_state()
             current_patient_index += 1; render_patient(current_patient_index)
 
-    def prev_patient():
+    async def prev_patient():
         global current_patient_index
         if current_patient_index > 0:
-            _save_search_state()
+            await _save_search_state()
             current_patient_index -= 1; render_patient(current_patient_index)
 
-    def _prev_patient():
+    async def _prev_patient():
         if not require_user(): return
-        prev_patient()
+        await prev_patient()
 
-    def _next_patient():
+    async def _next_patient():
         if not require_user(): return
-        next_patient()
+        await next_patient()
 
     def _show_patient_list():
         if not require_user(): return
@@ -3892,7 +3980,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
         render_patient(current_patient_index)
 
     # ── Logout ───────────────────────────────────────────────────────────────
-    def _do_logout():
+    async def _do_logout():
         global CURRENT_USER, df, EXTRACTION_CSV_PATH, UI_LOCKED
         global CURRENT_PROJECT, PROJECT_DIR
         _reset_demo_conn()
@@ -3908,8 +3996,13 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             try: _checkpoint_timer_holder[0].cancel()
             except Exception: pass
             _checkpoint_timer_holder[0] = None
-        # Hide floating JS widgets BEFORE clearing panels (slot still valid)
-        ui.run_javascript(
+        # Hide floating JS widgets AND strip any active search-highlight <span>
+        # wrappers BEFORE clearing panels (slot still valid). Just hiding
+        # ws-strip isn't enough — the .hl spans spliced into .right-pane's
+        # text nodes are still there, and clearing the panel while they're
+        # present is what can throw during Vue's DOM reconciliation.
+        await ui.run_javascript(
+            "if(window._watneyPreNavClearHL) window._watneyPreNavClearHL();"
             "var ws=document.getElementById('ws-strip');"
             "if(ws){ws.style.display='none';window._WS_state={open:false,query:'',nlp:true,disabled:{}}; }"
             "var sh=document.getElementById('note-sticky-header');if(sh)sh.style.display='none';"
@@ -3946,13 +4039,13 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             ui.button('Settings', on_click=_show_settings).props('dense outline')
 
     # ── Keyboard navigation ───────────────────────────────────────────────────
-    def _on_key(e):
+    async def _on_key(e):
         if not e.action.keydown or e.action.repeat:
             return
         if e.key == 'ArrowRight':
-            _next_patient()
+            await _next_patient()
         elif e.key == 'ArrowLeft':
-            _prev_patient()
+            await _prev_patient()
 
     ui.keyboard(on_key=_on_key)
 

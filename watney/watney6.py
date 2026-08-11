@@ -64,6 +64,9 @@ NOTES_COL = 'all_notes'
 GENERATION_COL = 'generation'
 PATIENT_ID_COL = 'DFCI_MRN'
 
+# Options for the "Progression Type" dropdown on progression cards / clinician events.
+PROGRESSION_TYPE_OPTIONS = ['Clinical', 'Radiographic']
+
 # ── Project-based paths (set when a project is opened) ──────────────────────
 CURRENT_PROJECT: dict = {}         # project.json contents
 PROJECT_DIR: Path | None = None    # absolute path to project folder
@@ -146,7 +149,8 @@ def _bootstrap_legacy_db():
         agent_end TEXT, agent_end_source TEXT,
         exclusion_flag TEXT, exclusion_reason TEXT, extraction_version TEXT,
         deleted INTEGER DEFAULT 0, deletion_reason TEXT, deletion_timestamp TEXT,
-        import_source TEXT, unexclusion_reason TEXT, agent_note TEXT)""")
+        import_source TEXT, unexclusion_reason TEXT, agent_note TEXT,
+        progression_type TEXT, agent_start_original TEXT, agent_end_original TEXT)""")
     c.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_progression_event
         ON annotations (DFCI_MRN, progression_date, progression_source, report_id)""")
     for _col, _typ in [
@@ -156,6 +160,8 @@ def _bootstrap_legacy_db():
         ('extraction_version','TEXT'),
         ('deleted','INTEGER'),('deletion_reason','TEXT'),('deletion_timestamp','TEXT'),
         ('import_source','TEXT'),('unexclusion_reason','TEXT'),('agent_note','TEXT'),
+        ('progression_type','TEXT'),
+        ('agent_start_original','TEXT'),('agent_end_original','TEXT'),
     ]:
         try: c.execute(f'ALTER TABLE annotations ADD COLUMN {_col} {_typ}')
         except sqlite3.OperationalError: pass
@@ -259,6 +265,32 @@ def normalize_patient_id(x) -> str:
         s = s[:-2]
     return s
 
+_RECENT_ANNOTATION_COLUMNS = [
+    ('progression_type',      'TEXT'),
+    ('agent_start_original',  'TEXT'),
+    ('agent_end_original',    'TEXT'),
+]
+
+def _ensure_progression_type_column(db_conn) -> bool:
+    """Self-healing migration for DBs opened before recently-added columns existed.
+
+    Older annotations.db files may not have picked up the ALTER TABLE migration
+    (e.g. if opened via a stale connection). Adding the columns here on-demand,
+    right before a query that needs them, guarantees callers never hit
+    "no such column" errors regardless of how the connection was opened.
+    Returns True if at least one column was just added.
+    """
+    added = False
+    for _col, _typ in _RECENT_ANNOTATION_COLUMNS:
+        try:
+            db_conn.execute(f'ALTER TABLE annotations ADD COLUMN {_col} {_typ}')
+            added = True
+        except sqlite3.OperationalError:
+            pass
+    if added:
+        db_conn.commit()
+    return added
+
 def upsert_annotation(new_row: dict):
     """Insert or update a single annotation row.
 
@@ -277,19 +309,28 @@ def upsert_annotation(new_row: dict):
         Path(EXTRACTION_CSV_PATH).name if EXTRACTION_CSV_PATH and PROJECT_DIR else None
     )
     if existing:
-        cursor.execute("""
+        _update_sql = """
         UPDATE annotations
         SET agent=?, evidence=?, determined_by=?, user=?, modification_timestamp=?,
             agent_start=?, agent_start_source=?, agent_end=?, agent_end_source=?,
-            extraction_version=COALESCE(?,extraction_version), agent_note=?
+            extraction_version=COALESCE(?,extraction_version), agent_note=?, progression_type=?,
+            agent_start_original=?, agent_end_original=?
         WHERE id=?
-        """, (
+        """
+        _update_params = (
             new_row['agent'], new_row['evidence'], new_row['determined_by'],
             new_row.get('user'), new_row['modification_timestamp'],
             new_row.get('agent_start'), new_row.get('agent_start_source'),
             new_row.get('agent_end'),   new_row.get('agent_end_source'),
-            _ext_ver, new_row.get('agent_note'), existing['id']
-        ))
+            _ext_ver, new_row.get('agent_note'), new_row.get('progression_type'),
+            new_row.get('agent_start_original'), new_row.get('agent_end_original'), existing['id']
+        )
+        try:
+            cursor.execute(_update_sql, _update_params)
+        except sqlite3.OperationalError:
+            if not _ensure_progression_type_column(conn):
+                raise
+            cursor.execute(_update_sql, _update_params)
     else:
         cursor.execute("""
             SELECT exclusion_flag, exclusion_reason FROM annotations
@@ -298,21 +339,30 @@ def upsert_annotation(new_row: dict):
         _excl_row = cursor.fetchone()
         _eflag  = _excl_row['exclusion_flag']   if _excl_row else None
         _ereason = _excl_row['exclusion_reason'] if _excl_row else None
-        cursor.execute("""
+        _insert_sql = """
         INSERT INTO annotations (
             DFCI_MRN, progression_date, progression_source, agent, evidence,
             report_id, determined_by, user, modification_timestamp,
             agent_start, agent_start_source, agent_end, agent_end_source,
-            exclusion_flag, exclusion_reason, extraction_version, agent_note)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (
+            exclusion_flag, exclusion_reason, extraction_version, agent_note, progression_type,
+            agent_start_original, agent_end_original)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """
+        _insert_params = (
             new_row['DFCI_MRN'], new_row['progression_date'], new_row['progression_source'],
             new_row['agent'], new_row['evidence'], new_row['report_id'],
             new_row['determined_by'], new_row.get('user'), new_row['modification_timestamp'],
             new_row.get('agent_start'), new_row.get('agent_start_source'),
             new_row.get('agent_end'),   new_row.get('agent_end_source'),
-            _eflag, _ereason, _ext_ver, new_row.get('agent_note'),
-        ))
+            _eflag, _ereason, _ext_ver, new_row.get('agent_note'), new_row.get('progression_type'),
+            new_row.get('agent_start_original'), new_row.get('agent_end_original'),
+        )
+        try:
+            cursor.execute(_insert_sql, _insert_params)
+        except sqlite3.OperationalError:
+            if not _ensure_progression_type_column(conn):
+                raise
+            cursor.execute(_insert_sql, _insert_params)
     save_annotations()
 
 def save_agent_assignment(rid: str, agent_value: str, patient_id: str,
@@ -684,6 +734,11 @@ body{{font-family:Arial;}}
     align-self:stretch;background:#e2e8f0;transition:background 0.15s;z-index:10;}}
 #panel-divider:hover,#panel-divider.dragging{{background:#93c5fd;}}
 .note-card{{border:1px solid #1e3a5f;border-radius:5px;padding:0;margin-bottom:8px;background:#fafafa;overflow:hidden;}}
+/* Progression cards — override NiceGUI's default 1rem card padding/gap for density */
+.compact-card{{padding:8px 10px!important;gap:5px!important;margin-bottom:6px!important;}}
+.left-main-text{{line-height:1.3;}}
+.left-sub-text{{color:#6b7280;line-height:1.3;}}
+.left-evidence{{color:#4b5563;line-height:1.35;margin:0;}}
 .note-meta{{display:flex;gap:10px;font-size:10px;font-weight:600;color:#e0eaff;margin-bottom:4px;padding:3px 6px 4px;border-radius:3px 3px 0 0;background:#1e3a5f;letter-spacing:0.02em;}}
 pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;padding:6px 10px;word-wrap:break-word;overflow-wrap:break-word;}}
 .evidence-highlight{{background-color:#ffe066;padding:2px 3px;border-radius:2px;font-weight:bold;}}
@@ -1468,30 +1523,33 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                       if matches else '')
 
         with ui.card().classes('w-full compact-card').style(card_style):
-            with ui.row().classes('w-full justify-between items-center'):
+            with ui.row().classes('w-full justify-between items-center no-wrap'):
                 ui.label(progression_date).classes('left-main-text font-bold')
                 ui.label(f'Confidence: {confidence}').classes('left-sub-text')
 
-            ui.label(f'Progression Date: {progression_date}').classes('left-sub-text')
-            ui.label(f'Note Date: {note_date}').classes('left-sub-text')
-            ui.label(f'Author: {author}').classes('left-sub-text')
-            ui.label(f'Report ID: {report_id}').classes('left-sub-text')
+            ui.label(f'{note_date}  ·  {author}  ·  RID {report_id}').classes('left-sub-text')
             if treatment_plan:
                 match_style = 'font-weight:600; color:#b45309;' if matches else ''
                 ui.label(f'Treatment at time: {treatment_plan}').classes('left-sub-text').style(match_style)
 
             if evidence:
-                ui.markdown(f'> {evidence}').classes('left-evidence text-xs')
+                ui.markdown(f'> {evidence}').classes('left-evidence')
 
             ui.button('Source',
                 on_click=lambda rid=report_id, ev=evidence: scroll_to_note(rid, ev)
-            ).props('dense flat')
+            ).props('dense flat size=sm')
 
             def _get_saved_ann(pid, rid, pdate):
-                _cr = _db().cursor()
-                _cr.execute("""SELECT agent,agent_start,agent_start_source,agent_end,agent_end_source
-                    FROM annotations WHERE DFCI_MRN=? AND report_id=? AND progression_date=? LIMIT 1""",
-                    (pid, rid, pdate))
+                _dbc = _db()
+                _cr = _dbc.cursor()
+                _sql = """SELECT agent,agent_start,agent_start_source,agent_end,agent_end_source,progression_type
+                    FROM annotations WHERE DFCI_MRN=? AND report_id=? AND progression_date=? LIMIT 1"""
+                try:
+                    _cr.execute(_sql, (pid, rid, pdate))
+                except sqlite3.OperationalError:
+                    if not _ensure_progression_type_column(_dbc):
+                        raise
+                    _cr.execute(_sql, (pid, rid, pdate))
                 return _cr.fetchone()
 
             saved              = _get_saved_ann(patient_id, report_id, progression_date)
@@ -1500,16 +1558,23 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             saved_start_source = saved['agent_start_source'] if saved else None
             saved_agent_end    = saved['agent_end']          if saved else None
             saved_end_source   = saved['agent_end_source']   if saved else None
+            saved_prog_type    = saved['progression_type']   if saved else None
 
             selected_agent = ui.select(
                 agent_names,
                 value=(saved_agent if saved_agent in agent_names else None),
                 label='Assign agent'
-            ).classes('w-full')
+            ).classes('w-full').props('dense')
 
-            with ui.row().classes('w-full gap-2 mt-1 items-center'):
-                start_input = ui.input(label='Start date', placeholder='YYYY-MM-DD').classes('flex-grow')
-                end_input   = ui.input(label='End date',   placeholder='YYYY-MM-DD').classes('flex-grow')
+            progression_type_select = ui.select(
+                PROGRESSION_TYPE_OPTIONS,
+                value=(saved_prog_type if saved_prog_type in PROGRESSION_TYPE_OPTIONS else None),
+                label='Progression Type'
+            ).classes('w-full').props('dense')
+
+            with ui.row().classes('w-full gap-2 items-center'):
+                start_input = ui.input(label='Start date', placeholder='YYYY-MM-DD').classes('flex-grow').props('dense')
+                end_input   = ui.input(label='End date',   placeholder='YYYY-MM-DD').classes('flex-grow').props('dense')
                 ui.button('No End Date',
                     on_click=lambda ei=end_input: ei.set_value('NA')
                 ).props('dense outline').classes('text-gray-500')
@@ -1550,7 +1615,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
 
             def do_save(rid=report_id, sa=selected_agent, pid=patient_id,
                         prog_dt=progression_date, ev=evidence,
-                        si=start_input, ei=end_input, _rs=None):
+                        si=start_input, ei=end_input, pt=progression_type_select, _rs=None):
                 av = sa.value
                 if not av: ui.notify('No agent selected', color='red'); return
                 ls = get_agent_first_start(extraction, av)
@@ -1568,20 +1633,16 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                     'modification_timestamp': datetime.now().isoformat(timespec='seconds'),
                     'agent_start': a_start, 'agent_start_source': a_start_src,
                     'agent_end': a_end, 'agent_end_source': a_end_src,
+                    'agent_start_original': ls, 'agent_end_original': le,
+                    'progression_type': pt.value,
                 })
                 ui.notify(f'Saved: {av}', color='green')
                 if _refresh_summary_holder[0]:
                     _refresh_summary_holder[0]()
 
-            ui.button('Save Agent Assignment',
-                on_click=lambda rid=report_id, sa=selected_agent, pid=patient_id,
-                                prog_dt=progression_date, ev=evidence,
-                                si=start_input, ei=end_input:
-                    do_save(rid, sa, pid, prog_dt, ev, si, ei)
-            ).props('dense')
-
             def do_remove(rid=report_id, pid=patient_id, prog_dt=progression_date,
-                          sel=selected_agent, si=start_input, ei=end_input, lbl=llm_hint):
+                          sel=selected_agent, si=start_input, ei=end_input, lbl=llm_hint,
+                          pt=progression_type_select):
                 if _demo_mode[0]:
                     _cr = _db().cursor()
                     _cr.execute("""DELETE FROM annotations
@@ -1594,11 +1655,19 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 sel.value = None
                 si.value  = ''
                 ei.value  = ''
+                pt.value  = None
                 lbl.set_text('')
                 if _refresh_summary_holder[0]:
                     _refresh_summary_holder[0]()
 
-            ui.button('Remove Agent', on_click=do_remove).props('dense outline')
+            with ui.row().classes('w-full gap-2 flex-wrap'):
+                ui.button('Save Agent Assignment',
+                    on_click=lambda rid=report_id, sa=selected_agent, pid=patient_id,
+                                    prog_dt=progression_date, ev=evidence,
+                                    si=start_input, ei=end_input:
+                        do_save(rid, sa, pid, prog_dt, ev, si, ei)
+                ).props('dense')
+                ui.button('Remove Agent', on_click=do_remove).props('dense outline')
 
     # ── Patient list ──────────────────────────────────────────────────────────
     def show_patient_list():
@@ -2498,7 +2567,8 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 agent_end TEXT, agent_end_source TEXT,
                 exclusion_flag TEXT, exclusion_reason TEXT, extraction_version TEXT,
                 deleted INTEGER DEFAULT 0, deletion_reason TEXT, deletion_timestamp TEXT,
-                import_source TEXT, unexclusion_reason TEXT, agent_note TEXT)""")
+                import_source TEXT, unexclusion_reason TEXT, agent_note TEXT,
+                progression_type TEXT, agent_start_original TEXT, agent_end_original TEXT)""")
             dc.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_demo
                 ON annotations(DFCI_MRN,progression_date,progression_source,report_id)""")
             dc.commit()
@@ -2530,12 +2600,14 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             cr.execute("""UPDATE annotations
                 SET agent=?,evidence=?,determined_by=?,user=?,modification_timestamp=?,
                     agent_start=?,agent_start_source=?,agent_end=?,agent_end_source=?,
-                    extraction_version=COALESCE(?,extraction_version),agent_note=?
+                    extraction_version=COALESCE(?,extraction_version),agent_note=?,progression_type=?,
+                    agent_start_original=?,agent_end_original=?
                 WHERE id=?""",
                 (row['agent'], row['evidence'], row['determined_by'], row.get('user'),
                  row['modification_timestamp'], row.get('agent_start'), row.get('agent_start_source'),
                  row.get('agent_end'), row.get('agent_end_source'), _ext_ver,
-                 row.get('agent_note'), existing['id']))
+                 row.get('agent_note'), row.get('progression_type'),
+                 row.get('agent_start_original'), row.get('agent_end_original'), existing['id']))
         else:
             _ecr = dc.cursor()
             _ecr.execute("""
@@ -2549,14 +2621,16 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 (DFCI_MRN,progression_date,progression_source,agent,evidence,
                  report_id,determined_by,user,modification_timestamp,
                  agent_start,agent_start_source,agent_end,agent_end_source,
-                 exclusion_flag,exclusion_reason,extraction_version,agent_note)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 exclusion_flag,exclusion_reason,extraction_version,agent_note,progression_type,
+                 agent_start_original,agent_end_original)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (row['DFCI_MRN'], row['progression_date'], row['progression_source'],
                  row['agent'], row['evidence'], row['report_id'],
                  row['determined_by'], row.get('user'), row['modification_timestamp'],
                  row.get('agent_start'), row.get('agent_start_source'),
                  row.get('agent_end'), row.get('agent_end_source'),
-                 _eflag, _ereason, _ext_ver, row.get('agent_note')))
+                 _eflag, _ereason, _ext_ver, row.get('agent_note'), row.get('progression_type'),
+                 row.get('agent_start_original'), row.get('agent_end_original')))
         dc.commit()
 
     def _patients_conn():
@@ -3112,6 +3186,9 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                         ui.label(f"Start: {crow.get('agent_start','')}  End: {crow.get('agent_end','')}").classes('text-xs')
                         ui.label(f"Evidence: {crow.get('evidence','')}").classes('text-xs')
                         ui.label(f"Determined by: {crow.get('determined_by','')}").classes('text-xs')
+                        _ptype = crow.get('progression_type', '')
+                        if _ptype and str(_ptype).strip() not in ('', 'None', 'nan'):
+                            ui.label(f"Progression Type: {_ptype}").classes('text-xs')
                         _anote = crow.get('agent_note', '')
                         if _anote and str(_anote).strip() not in ('', 'NA', 'None', 'nan'):
                             ui.label(f"Note: {_anote}").classes('text-xs text-blue-700')
@@ -3143,6 +3220,9 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
             all_agent_names = drug_names + [a for a in custom_agents if a not in drug_names]
             clinician_agent = ui.select(all_agent_names or [], label='Agent').classes('w-full')
             clin_llm_hint = ui.label('').classes('text-xs text-gray-400')
+            clinician_progression_type = ui.select(
+                PROGRESSION_TYPE_OPTIONS, label='Progression Type'
+            ).classes('w-full')
 
             with ui.row().classes('w-full items-center gap-1'):
                 custom_agent_input = ui.input(label='Add custom agent', placeholder='e.g. Pembrolizumab').classes('flex-grow')
@@ -3297,7 +3377,9 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                     'modification_timestamp': datetime.now().isoformat(timespec='seconds'),
                     'agent_start': a_start, 'agent_start_source': a_start_src,
                     'agent_end': a_end, 'agent_end_source': a_end_src,
+                    'agent_start_original': ls, 'agent_end_original': le,
                     'agent_note': agent_note_val,
+                    'progression_type': clinician_progression_type.value,
                 })
                 if not _demo_mode[0]: pass
                 else: ui.notify('Clinician event saved', color='green')
@@ -3313,6 +3395,7 @@ pre{{white-space:pre-wrap;font-size:{NOTE_FONT_SIZE}px;line-height:1.4;margin:0;
                 clin_end_input.value = ''; clin_llm_hint.set_text('')
                 agent_note_select.value = None; agent_note_other.value = ''
                 agent_note_other.set_visibility(False)
+                clinician_progression_type.value = None
                 render_patient(current_patient_index)
 
             ui.button('Save Clinician Progression Event', on_click=save_clinician_event).props('dense')
